@@ -1,0 +1,80 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: light;
+  }
+
+  html, body, #root {
+    height: 100%;
+  }
+
+  body {
+    font-feature-settings: 'ss01', 'cv11';
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* Custom scrollbar for chart area */
+  .tibbie-scroll::-webkit-scrollbar {
+    height: 10px;
+    width: 10px;
+  }
+  .tibbie-scroll::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .tibbie-scroll::-webkit-scrollbar-thumb {
+    background: #EAE4D9;
+    border-radius: 5px;
+  }
+  .tibbie-scroll::-webkit-scrollbar-thumb:hover {
+    background: #D4CCB8;
+  }
+
+  /* Dial down gantt-task-react's default chrome so it blends into our theme */
+  .tibbie-gantt ._2B2zv,
+  .tibbie-gantt ._3ZbQT,
+  .tibbie-gantt ._WuQ0f {
+    background: transparent !important;
+  }
+
+  /* Minimum touch target */
+  @media (pointer: coarse) {
+    button, a, [role="button"] {
+      min-height: 40px;
+    }
+  }
+}
+
+@layer components {
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg
+           bg-rust-500 text-cream-50 font-medium text-sm
+           hover:bg-rust-600 active:bg-rust-700
+           transition-colors disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+  .btn-ghost {
+    @apply inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg
+           text-ink-700 font-medium text-sm
+           hover:bg-cream-200 active:bg-cream-300
+           transition-colors disabled:opacity-50;
+  }
+  .btn-outline {
+    @apply inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg
+           border border-cream-300 bg-white text-ink-700 font-medium text-sm
+           hover:bg-cream-100 active:bg-cream-200
+           transition-colors disabled:opacity-50;
+  }
+  .input {
+    @apply w-full px-3 py-2 rounded-lg border border-cream-300 bg-white
+           text-ink-900 placeholder-ink-400
+           focus:outline-none focus:border-rust-400 focus:ring-2 focus:ring-rust-200
+           transition-colors;
+  }
+  .chip {
+    @apply inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full
+           bg-cream-200 text-ink-700 text-xs font-medium;
+  }
+}
