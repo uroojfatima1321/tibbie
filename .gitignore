@@ -1,9 +1,10 @@
 node_modules/
 dist/
-.netlify/
+.wrangler/
 *.log
 .env
 .env.local
+.dev.vars
 .DS_Store
 .vscode/
 .idea/

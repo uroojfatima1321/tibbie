@@ -1,0 +1,9 @@
+name = "tibbie"
+compatibility_date = "2024-11-01"
+pages_build_output_dir = "./dist"
+
+# KV binding for local development (wrangler pages dev).
+# Production binding is configured in the Cloudflare dashboard — see README.
+[[kv_namespaces]]
+binding = "TIBBIE_KV"
+id = "LOCAL_DEV_ONLY_REPLACE_WITH_REAL_ID"

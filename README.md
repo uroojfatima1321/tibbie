@@ -1,6 +1,6 @@
 # tibbie.
 
-A free, browser-based project management app with a mobile-responsive Gantt timeline. Read access is open; edit access is behind a PIN.
+A free, browser-based project management app with a mobile-responsive Gantt timeline. Read access is open; edit access is behind a PIN. Deployed on Cloudflare Pages with KV storage.
 
 ## What's in the box
 
@@ -16,54 +16,148 @@ A free, browser-based project management app with a mobile-responsive Gantt time
 ## Stack
 
 - React 18 + Vite + TypeScript + Tailwind CSS
-- Netlify Functions (Node) + Netlify Blobs for storage
+- Cloudflare Pages (hosting) + Cloudflare Pages Functions (serverless)
+- Cloudflare KV for storage
 - TanStack Query for data caching and optimistic updates
-- `date-fns` for date math; `html2canvas` + `jspdf` for export
 
-## Running locally
+## Deploying to Cloudflare Pages
 
-You need Node 20+ and the Netlify CLI (`npm i -g netlify-cli`).
+You need a Cloudflare account (free — no credit card required) and Node.js 20+.
+
+### Step 1 — Install dependencies
 
 ```bash
+unzip tibbie.zip && cd tibbie
 npm install
-netlify login
-netlify init   # link to a Netlify site (create a new one if needed)
-npm run dev    # runs `netlify dev` — serves functions + frontend together on :8888
 ```
 
-Open http://localhost:8888.
-
-On first run the app is empty. Click **Set edit PIN** (the lock icon in the top-right), create a PIN, then either load sample data or start adding your first project.
-
-## Deploying
+### Step 2 — Install Wrangler and log in
 
 ```bash
-netlify deploy --prod
+npm install -g wrangler
+wrangler login   # opens a browser to authorize
 ```
 
-Or push to GitHub and connect the repo in the Netlify dashboard — the `netlify.toml` already has the build config.
+### Step 3 — Create the KV namespace
 
-Everything runs on free-tier Netlify:
-- Hosting: Netlify's free tier
-- Functions: 125K invocations/month free
-- Blobs: included with the site, generous quota
+Cloudflare KV needs namespaces for both production and local dev:
+
+```bash
+# Production namespace
+wrangler kv namespace create TIBBIE_KV
+
+# Preview namespace (used by wrangler pages dev)
+wrangler kv namespace create TIBBIE_KV --preview
+```
+
+Each command prints an `id` (and `preview_id`). Save both — you'll paste them in Step 5.
+
+Example output:
+```
+🌀 Creating namespace with title "tibbie-TIBBIE_KV"
+✨ Success!
+Add the following to your configuration file in your kv_namespaces array:
+{ binding = "TIBBIE_KV", id = "abc123def456..." }
+```
+
+### Step 4 — Create the Pages project
+
+```bash
+wrangler pages project create tibbie --production-branch=main
+```
+
+This just registers the project name. No code deployed yet.
+
+### Step 5 — Update `wrangler.toml` with your real IDs
+
+Open `wrangler.toml` and replace the placeholder `id`:
+
+```toml
+name = "tibbie"
+compatibility_date = "2024-11-01"
+pages_build_output_dir = "./dist"
+
+[[kv_namespaces]]
+binding = "TIBBIE_KV"
+id = "YOUR_PRODUCTION_ID_HERE"
+preview_id = "YOUR_PREVIEW_ID_HERE"
+```
+
+### Step 6 — Build and deploy
+
+```bash
+npm run deploy
+```
+
+This runs the build and uploads to Cloudflare. First deploy takes ~2 minutes. You'll get a URL like `tibbie.pages.dev`.
+
+### Step 7 — Bind KV in the Cloudflare dashboard
+
+This is the step most people miss. Even though `wrangler.toml` declares the KV binding, the Pages production deploy needs it bound explicitly in the dashboard:
+
+1. Go to https://dash.cloudflare.com → **Workers & Pages** → **tibbie**
+2. **Settings** → **Bindings**
+3. Click **Add** → **KV Namespace**
+4. Variable name: `TIBBIE_KV` (must match exactly)
+5. KV namespace: select the one you created in Step 3
+6. Save
+7. Trigger a redeploy: **Deployments** → click the latest one → **Retry deployment**
+
+Without this step, the functions will return errors when they try to access `env.TIBBIE_KV`.
+
+### Step 8 — First-run setup
+
+Open the deployed URL. Click the **lock icon** top-right to create your edit PIN, then **Load sample data** for a demo or **Start empty**.
+
+---
+
+## Continuous deployment with GitHub (optional)
+
+If you want pushes to auto-deploy, connect the repo:
+
+1. Push the code to a GitHub repo
+2. Cloudflare dashboard → **Workers & Pages** → **Create** → **Pages** → **Connect to Git**
+3. Pick the repo, set:
+   - Build command: `npm run build`
+   - Build output: `dist`
+   - Root directory: `/`
+4. In **Settings** → **Environment variables**, add `NODE_VERSION` = `20`
+5. Re-do Step 7 to bind KV (dashboard binding persists across deploys)
+
+---
+
+## Testing locally
+
+Local dev needs the preview KV namespace you created in Step 3. Running:
+
+```bash
+npm run dev:cf
+```
+
+Starts Wrangler on `http://localhost:8788` with both the Vite dev server and the KV-backed functions. All the PIN and edit flows work end-to-end locally.
+
+For frontend-only work (no functions), `npm run dev` runs Vite alone on `:5173`. Reads and writes will fail in this mode.
+
+---
 
 ## Access model
 
-- **Anyone with the URL can view everything** — projects, tasks, the timeline.
-- **Only someone with the PIN can create, edit, or delete.** The PIN is hashed (SHA-256) and stored in Netlify Blobs. Verification happens server-side in the `pin.ts` Function; writes to `data.ts` require a valid PIN in the `X-Tibbie-Pin` header.
-- **Session unlock** — once unlocked, the PIN lives in `sessionStorage` until you close the tab or click **Lock**.
+- **Anyone with the URL can view everything** — projects, tasks, the timeline
+- **Only someone with the PIN can create, edit, or delete** — the PIN is hashed (SHA-256 via Web Crypto) and stored in KV
+- **Session unlock** — once unlocked, the PIN lives in `sessionStorage` until tab close or manual lock
 
-Caveat: because reads are open and the app is client-heavy, view-only users could in theory inspect your data structure. Don't put anything confidential here that you wouldn't be comfortable with anyone seeing.
+Because reads are open and the app is client-heavy, view-only users can inspect the data structure. Don't put anything confidential here.
+
+---
 
 ## Data model
 
-All data is stored in a single Netlify Blobs key (`tibbie-data/root`) as one JSON document:
+All data stored in a single KV key (`TIBBIE_KV:root`) as JSON:
 
 ```
 {
-  projects: [{ id, name, description, startDate, endDate, color, createdAt, updatedAt }],
-  members:  [{ id, name, email?, color, createdAt }],
+  projects: [{ id, name, description, startDate, endDate, color, ... }],
+  members:  [{ id, name, email?, color, ... }],
   tasks:    [{ id, projectId, name, notes, startDate, endDate, status,
                percentComplete, isMilestone, assigneeIds[], recurring, ... }],
   dependencies: [{ predecessorId, successorId }],
@@ -71,52 +165,95 @@ All data is stored in a single Netlify Blobs key (`tibbie-data/root`) as one JSO
 }
 ```
 
-Single-blob storage keeps writes atomic and is fine for <1K tasks. If it ever grows past that, shard to one blob per collection — see `netlify/functions/data.ts`.
+Single-key storage is fine for <1K tasks. Writes are atomic; last-write-wins.
 
 ## Swapping the data source (US-17)
 
-The `src/api/adapter.ts` module exposes a `DataAdapter` interface. To switch from Netlify Blobs to, say, Google Sheets or Supabase, implement the interface and change the single line at the bottom of the file. Nothing else in the codebase needs to know.
+The `src/api/adapter.ts` module exposes a `DataAdapter` interface. Change that one file to migrate to a different backend — the components don't know or care.
+
+---
 
 ## Project structure
 
 ```
-netlify/functions/    Server-side CRUD + PIN handling
-  _shared.ts          Blobs store, PIN hashing, HTTP helpers
-  data.ts             GET / PUT dataset
-  pin.ts              PIN setup, verify, rotate
+functions/                 Cloudflare Pages Functions
+  _shared.ts               KV helpers, PIN hashing, HTTP
+  api/
+    data.ts                GET/PUT dataset
+    pin.ts                 PIN setup/verify/rotate
 
 src/
-  api/                Client ↔ Functions, and the adapter interface
+  api/                     Client ↔ Functions, adapter interface
   components/
-    shell/            Nav, Logo, PIN gate, status banner
-    gantt/            The SVG Gantt view
-    tasks/            Task detail panel + form
-    projects/         Project form
-    members/          Members panel + avatars
-    search/           Search palette
-    filters/          Filter bar + drawer
-    views/            Heatmap view
-    ui/               Modal, Sheet, Toast, Confirm, Badge primitives
-  hooks/              useMediaQuery, useDebounce
-  lib/                Dates, CPM, search, export, seed, utils
-  store/context.tsx   App-wide state + all mutations
+    shell/                 Nav, Logo, PIN gate, status banner
+    gantt/                 SVG Gantt view
+    tasks/                 Task detail panel + form
+    projects/              Project form
+    members/               Members panel + avatars
+    search/                Search palette
+    filters/               Filter bar + drawer
+    views/                 Heatmap view
+    ui/                    Modal, Sheet, Toast, Confirm, Badge
+  hooks/                   useMediaQuery, useDebounce
+  lib/                     Dates, CPM, search, export, seed, utils
+  store/context.tsx        App-wide state + mutations
   types.ts
   App.tsx
   main.tsx
+
+public/
+  _redirects               SPA fallback (all non-API routes → index.html)
+  _routes.json             Which paths are Functions vs static
+  favicon.svg
+
+wrangler.toml              Pages + KV config
 ```
 
-## Known limitations & deferred items
+---
 
-- **Recurring tasks (US-23)** — the `recurring` flag and interval are stored on the task, but next-occurrence auto-generation is not yet implemented. Recurring tasks render as single instances for now.
-- **Keyboard shortcuts beyond Cmd+K** — only search has a keyboard shortcut; task edit, navigation arrows, etc. would be nice to add.
-- **Offline mode** — the app requires a live connection; no service worker or optimistic-without-network fallback.
-- **Multi-user concurrent edits** — last-write-wins. If two people are editing simultaneously, the later save silently overwrites.
+## Free-tier limits
+
+Cloudflare Pages + KV free tier:
+- **Unlimited static requests** (no bandwidth cap)
+- **500 builds/month**
+- **KV: 100K reads/day, 1K writes/day, 1GB storage**
+- **Functions: 100K invocations/day**
+
+The KV write limit is the one to be aware of — if your team makes more than 1000 edits per day the writes will start rejecting until the next UTC day. For a PM tool this is comfortably in the clear.
+
+---
+
+## Troubleshooting
+
+**`env.TIBBIE_KV is undefined`** — KV binding missing in dashboard. Redo Step 7.
+
+**`wrangler pages dev` has no KV** — you didn't create the `--preview` namespace. Rerun Step 3 with `--preview`.
+
+**Build fails on TypeScript** — `npm run typecheck` locally first. The Cloudflare Workers types are stricter about some globals.
+
+**Forgot the PIN** — in the Cloudflare dashboard: **Workers & Pages** → **KV** → your namespace → delete the `pin_hash` key. Data in `root` stays intact. App will treat it as first-run.
+
+**PIN won't set** — check function logs at dashboard → **tibbie** → **Functions** → **Real-time logs**.
+
+**Redeploy after config change** — dashboard → **Deployments** → **Retry deployment** on the latest.
+
+---
+
+## Known limitations
+
+- **Recurring tasks (US-23)** — data model and UI present; next-occurrence auto-generation not implemented
+- **Multi-user concurrent edits** — last-write-wins, no conflict resolution
+- **Offline mode** — requires a live connection
+- **Keyboard shortcuts** — only Cmd+K for search
+
+---
 
 ## Commands
 
 ```bash
-npm run dev        # netlify dev (functions + frontend, port 8888)
-npm run dev:vite   # just Vite, no functions (port 5173, reads will fail)
-npm run build      # typecheck + production build to dist/
-npm run typecheck  # tsc --noEmit
+npm run dev         # Vite only, port 5173 (reads/writes fail)
+npm run dev:cf      # Wrangler + Vite, port 8788 (full stack)
+npm run build       # typecheck + production build
+npm run deploy      # build + upload to Cloudflare Pages
+npm run typecheck   # tsc --noEmit
 ```

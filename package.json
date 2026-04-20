@@ -5,14 +5,14 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "netlify dev",
-    "dev:vite": "vite",
+    "dev": "vite",
+    "dev:cf": "wrangler pages dev -- npm run dev",
     "build": "tsc --noEmit && vite build",
-    "preview": "vite preview",
+    "preview": "wrangler pages dev ./dist",
+    "deploy": "npm run build && wrangler pages deploy ./dist --project-name=tibbie",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@netlify/blobs": "^8.1.0",
     "@tanstack/react-query": "^5.59.0",
     "date-fns": "^4.1.0",
     "html2canvas": "^1.4.1",
@@ -22,8 +22,8 @@
     "react-dom": "^18.3.1"
   },
   "devDependencies": {
-    "@netlify/functions": "^2.8.2",
-    "@types/node": "^25.6.0",
+    "@cloudflare/workers-types": "^4.20241022.0",
+    "@types/node": "^22.8.0",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.3",
@@ -31,6 +31,7 @@
     "postcss": "^8.4.47",
     "tailwindcss": "^3.4.14",
     "typescript": "^5.6.3",
-    "vite": "^5.4.10"
+    "vite": "^5.4.10",
+    "wrangler": "^3.85.0"
   }
 }
