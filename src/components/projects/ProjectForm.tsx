@@ -81,7 +81,7 @@ export function ProjectForm({ projectId, creating, onClose }: Props) {
       </div>
 
       {editMode && (
-        <div className="border-t border-cream-300 bg-cream-50 px-5 py-3 flex items-center gap-2">
+        <div className="border-t border-surface-200 bg-white px-5 py-3 flex items-center gap-2">
           {existing && (
             <button onClick={() => setConfirmDelete(true)} className="btn-ghost !text-brick-500">
               <Trash2 size={16} /> Delete

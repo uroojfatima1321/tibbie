@@ -17,7 +17,7 @@ const SIZES = {
 export function Avatar({ member, size = 'sm', title }: Props) {
   return (
     <span
-      className={`inline-flex items-center justify-center rounded-full font-semibold text-white shrink-0 ring-1 ring-cream-50 ${SIZES[size]}`}
+      className={`inline-flex items-center justify-center rounded-full font-semibold text-white shrink-0 ring-1 ring-white ${SIZES[size]}`}
       style={{ backgroundColor: member.color }}
       title={title || member.name}
     >
@@ -33,7 +33,7 @@ export function AvatarStack({ members, max = 3, size = 'sm' }: { members: Member
     <div className="flex -space-x-1.5">
       {shown.map(m => <Avatar key={m.id} member={m} size={size} />)}
       {extra > 0 && (
-        <span className={`inline-flex items-center justify-center rounded-full bg-cream-200 text-ink-600 font-semibold ${SIZES[size || 'sm']} ring-1 ring-cream-50`}>
+        <span className={`inline-flex items-center justify-center rounded-full bg-surface-100 text-ink-600 font-semibold ${SIZES[size || 'sm']} ring-1 ring-white`}>
           +{extra}
         </span>
       )}

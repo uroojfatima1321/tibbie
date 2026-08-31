@@ -8,7 +8,7 @@ const LABELS: Record<TaskStatus, string> = {
 }
 
 const TONES: Record<TaskStatus, string> = {
-  not_started: 'bg-cream-200 text-ink-600',
+  not_started: 'bg-surface-100 text-ink-600',
   in_progress: 'bg-steel-500/10 text-steel-600 border border-steel-500/20',
   at_risk:     'bg-amber-500/15 text-amber-600 border border-amber-500/25',
   done:        'bg-forest-400/15 text-forest-600 border border-forest-400/25',
@@ -27,7 +27,7 @@ export function PercentBar({ percent }: { percent: number }) {
   const p = Math.max(0, Math.min(100, percent))
   return (
     <div className="flex items-center gap-2">
-      <div className="flex-1 h-1.5 rounded-full bg-cream-300 overflow-hidden">
+      <div className="flex-1 h-1.5 rounded-full bg-surface-200 overflow-hidden">
         <div className="h-full bg-forest-500 transition-all" style={{ width: `${p}%` }} />
       </div>
       <span className="text-xs text-ink-500 font-mono tabular-nums w-8 text-right">{p}%</span>

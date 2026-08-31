@@ -8,8 +8,6 @@ import {
  * PUT  /api/data  → replace dataset (PIN required)
  *
  * Whole dataset kept in one KV key `root`. Atomic writes; last-write-wins.
- * Sharding to per-collection keys becomes interesting past ~1K tasks —
- * you're nowhere near that yet.
  */
 export const onRequest: PagesFunction<Env> = async ({ request, env }) => {
   if (request.method === 'OPTIONS') return preflight()
@@ -34,7 +32,25 @@ export const onRequest: PagesFunction<Env> = async ({ request, env }) => {
       || !Array.isArray(body.members) || !Array.isArray(body.dependencies)) {
       return bad(400, 'Dataset missing required arrays')
     }
-    await env.TIBBIE_KV.put('root', JSON.stringify(body))
+
+    // Strip _v1ProjectsBackup from the main blob — it should never live in `root`.
+    // Keeping it there inflates every subsequent write and can trigger KV rate limits.
+    // Belt-and-suspenders: client-side migrate() also no longer sets it, but old KV
+    // data written before this fix may still carry it.
+    const { _v1ProjectsBackup, ...dataToStore } = body as any
+
+    try {
+      await env.TIBBIE_KV.put('root', JSON.stringify(dataToStore))
+    } catch (e: any) {
+      // KV.put can throw on rate-limit or size limit; surface a clear 503.
+      return bad(503, `KV write failed: ${e?.message ?? 'unknown error'}`)
+    }
+
+    // Persist V1 backup to its own key — once, silently.
+    if (Array.isArray(_v1ProjectsBackup) && _v1ProjectsBackup.length > 0) {
+      try { await env.TIBBIE_KV.put('root_v1backup', JSON.stringify(_v1ProjectsBackup)) } catch {}
+    }
+
     return ok({ ok: true })
   }
 

@@ -1,7 +1,9 @@
-import html2canvas from 'html2canvas'
-import jsPDF from 'jspdf'
+// Fix 11 (R1-M3/R2-M7): lazy-import html2canvas and jspdf so their ~600 KB
+// combined weight doesn't land in the initial bundle. They're only needed when
+// the user explicitly triggers a PDF or PNG export.
 
 export async function exportElementToPNG(el: HTMLElement, filename: string): Promise<void> {
+  const html2canvas = (await import('html2canvas')).default
   const canvas = await html2canvas(el, {
     backgroundColor: '#FAF8F3',
     scale: 2,
@@ -15,31 +17,18 @@ export async function exportElementToPNG(el: HTMLElement, filename: string): Pro
 }
 
 export async function exportElementToPDF(el: HTMLElement, filename: string): Promise<void> {
+  const [html2canvas, { default: jsPDF }] = await Promise.all([
+    import('html2canvas').then(m => m.default),
+    import('jspdf'),
+  ])
   const canvas = await html2canvas(el, {
     backgroundColor: '#FAF8F3',
     scale: 2,
     useCORS: true,
     logging: false,
   })
-  const imgData = canvas.toDataURL('image/png')
-
-  // Single landscape A4 page, scaled to fit — per US-21 and your default
-  const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' })
-  const pageW = pdf.internal.pageSize.getWidth()
-  const pageH = pdf.internal.pageSize.getHeight()
-
-  // Fit-contain: preserve aspect, fit inside page
-  const imgAspect = canvas.width / canvas.height
-  const pageAspect = pageW / pageH
-  let w = pageW, h = pageH
-  if (imgAspect > pageAspect) {
-    h = pageW / imgAspect
-  } else {
-    w = pageH * imgAspect
-  }
-  const x = (pageW - w) / 2
-  const y = (pageH - h) / 2
-
-  pdf.addImage(imgData, 'PNG', x, y, w, h)
+  const imgData = canvas.toDataURL('image/jpeg', 0.95)
+  const pdf = new jsPDF({ orientation: 'landscape', unit: 'px', format: [canvas.width, canvas.height] })
+  pdf.addImage(imgData, 'JPEG', 0, 0, canvas.width, canvas.height)
   pdf.save(filename.endsWith('.pdf') ? filename : `${filename}.pdf`)
 }

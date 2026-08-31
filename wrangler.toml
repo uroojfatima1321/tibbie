@@ -6,4 +6,4 @@ pages_build_output_dir = "./dist"
 # Production binding is configured in the Cloudflare dashboard — see README.
 [[kv_namespaces]]
 binding = "TIBBIE_KV"
-id = "LOCAL_DEV_ONLY_REPLACE_WITH_REAL_ID"
+id = "f1474f9d715946fe97c47300ebd38806"

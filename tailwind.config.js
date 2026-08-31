@@ -9,12 +9,6 @@ export default {
         mono: ['"JetBrains Mono"', 'ui-monospace', 'monospace'],
       },
       colors: {
-        cream: {
-          50: '#FDFBF6',
-          100: '#FAF8F3',
-          200: '#F4EFE4',
-          300: '#EAE4D9',
-        },
         ink: {
           900: '#171512',
           700: '#2F2A24',
@@ -39,16 +33,29 @@ export default {
           600: '#234433',
         },
         amber: {
+          50: '#FEF9EE',
           500: '#C8932F',
           600: '#A87924',
         },
         brick: {
+          50: '#FAF0EE',
           500: '#A83D2F',
           600: '#8A2F23',
         },
         steel: {
+          50: '#EEF3F7',
           500: '#3A6B8A',
           600: '#2D5470',
+        },
+        surface: {
+          50:  '#FAFAFA',
+          100: '#F4F4F3',
+          200: '#E8E7E4',
+          300: '#D9D8D4',
+        },
+        navy: {
+          500: '#232B3A',
+          600: '#1A2130',
         },
       },
       boxShadow: {
@@ -69,11 +76,16 @@ export default {
           '0%': { opacity: '0', transform: 'scale(0.96)' },
           '100%': { opacity: '1', transform: 'scale(1)' },
         },
+        'rank-flash': {
+          '0%': { backgroundColor: 'rgba(200, 147, 47, 0.28)' },
+          '100%': { backgroundColor: 'transparent' },
+        },
       },
       animation: {
         'slide-up': 'slide-up 0.24s cubic-bezier(0.32, 0.72, 0, 1)',
         'fade-in': 'fade-in 0.18s ease-out',
         'scale-in': 'scale-in 0.16s cubic-bezier(0.32, 0.72, 0, 1)',
+        'rank-flash': 'rank-flash 0.4s ease-out forwards',
       },
     },
   },

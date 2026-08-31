@@ -20,7 +20,7 @@ export function ConfirmDialog({ open, onClose, onConfirm, title, message, confir
           <button
             onClick={() => { onConfirm(); onClose() }}
             className={danger
-              ? 'inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-brick-500 text-cream-50 font-medium text-sm hover:bg-brick-600 transition-colors'
+              ? 'inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-brick-500 text-white font-medium text-sm hover:bg-brick-600 transition-colors'
               : 'btn-primary'}
           >
             {confirmLabel}

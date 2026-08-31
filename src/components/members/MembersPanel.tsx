@@ -32,7 +32,7 @@ export function MembersPanel({ open, onClose }: { open: boolean; onClose: () => 
                 usedColors={data?.members.filter(x => x.id !== m.id).map(x => x.color) || []}
               />
             ) : (
-              <div className="flex items-center gap-3 p-2 rounded-lg hover:bg-cream-100 group">
+              <div className="flex items-center gap-3 p-2 rounded-lg hover:bg-surface-50 group">
                 <Avatar member={m} size="md" />
                 <div className="flex-1 min-w-0">
                   <div className="text-sm font-medium text-ink-900 truncate">{m.name}</div>
@@ -99,7 +99,7 @@ function MemberEditor({ member, onSave, onCancel, usedColors }: EditorProps) {
   const [saving, setSaving] = useState(false)
 
   return (
-    <div className="p-3 rounded-lg bg-cream-100 space-y-2.5">
+    <div className="p-3 rounded-lg bg-surface-50 space-y-2.5">
       <div className="flex gap-2">
         <input autoFocus className="input" placeholder="Name" value={name} onChange={e => setName(e.target.value)} />
         <input className="input" placeholder="Email (optional)" value={email} onChange={e => setEmail(e.target.value)} />

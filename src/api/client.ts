@@ -21,8 +21,16 @@ async function req<T>(path: string, init: RequestInit = {}): Promise<T> {
   const res = await fetch(path, { ...init, headers })
   if (!res.ok) {
     let msg = `HTTP ${res.status}`
-    try { const j = await res.json() as { error?: string }; if (j.error) msg = j.error } catch {}
-    throw new Error(msg)
+    let snippet = ''
+    try {
+      const text = await res.text()
+      snippet = text.slice(0, 300)
+      const j = JSON.parse(text)
+      if (j.error) msg = j.error
+    } catch {}
+    // Attach snippet so the diagnostic overlay can display it
+    const err = Object.assign(new Error(msg), { responseSnippet: snippet })
+    throw err
   }
   return res.json() as Promise<T>
 }

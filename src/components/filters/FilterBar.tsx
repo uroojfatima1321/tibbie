@@ -13,7 +13,7 @@ const STATUS_LABELS: Record<TaskStatus, string> = {
 }
 
 export function FilterBar() {
-  const { filters, setFilters, data, groupBy, setGroupBy, zoom, setZoom } = useApp()
+  const { filters, setFilters, data, groupBy, setGroupBy, zoom, setZoom, projectsV2 } = useApp()
   const [drawerOpen, setDrawerOpen] = useState(false)
   const isMobile = useIsMobile()
 
@@ -26,8 +26,8 @@ export function FilterBar() {
   const clearAll = () => setFilters({ projectIds: [], statuses: [], memberIds: [], dateRange: { start: null, end: null } })
 
   const projectChips = useMemo(
-    () => filters.projectIds.map(id => data?.projects.find(p => p.id === id)).filter(Boolean),
-    [filters.projectIds, data],
+    () => filters.projectIds.map(id => (projectsV2 || []).find(p => p.id === id)).filter(Boolean),
+    [filters.projectIds, projectsV2],
   )
   const memberChips = useMemo(
     () => filters.memberIds.map(id => data?.members.find(m => m.id === id)).filter(Boolean),
@@ -36,40 +36,40 @@ export function FilterBar() {
 
   return (
     <>
-      <div className="border-b border-cream-300 bg-cream-100/70 backdrop-blur px-4 sm:px-6 py-2.5">
+      <div className="border-b border-surface-200 bg-surface-50/70 backdrop-blur px-4 sm:px-6 py-2.5">
         <div className="flex items-center gap-2 flex-wrap">
           {/* Filter toggle */}
           <button onClick={() => setDrawerOpen(true)} className="btn-outline">
             <SlidersHorizontal size={14} />
             <span>Filters</span>
             {activeCount > 0 && (
-              <span className="ml-1 text-[10px] font-semibold px-1.5 rounded-full bg-rust-500 text-cream-50">{activeCount}</span>
+              <span className="ml-1 text-[10px] font-semibold px-1.5 rounded-full bg-rust-500 text-white">{activeCount}</span>
             )}
           </button>
 
           {/* Active chips */}
           {projectChips.map(p => p && (
-            <button key={p.id} onClick={() => setFilters(f => ({ ...f, projectIds: f.projectIds.filter(id => id !== p.id) }))} className="chip hover:bg-cream-300">
-              <span className="w-2 h-2 rounded-full" style={{ backgroundColor: p.color }} />
+            <button key={p.id} onClick={() => setFilters(f => ({ ...f, projectIds: f.projectIds.filter(id => id !== p.id) }))} className="chip hover:bg-surface-200">
+              <span className="w-2 h-2 rounded-full" style={{ backgroundColor: p.color ?? '#8B8680' }} />
               {p.name}
               <X size={12} />
             </button>
           ))}
           {filters.statuses.map(s => (
-            <button key={s} onClick={() => setFilters(f => ({ ...f, statuses: f.statuses.filter(x => x !== s) }))} className="chip hover:bg-cream-300">
+            <button key={s} onClick={() => setFilters(f => ({ ...f, statuses: f.statuses.filter(x => x !== s) }))} className="chip hover:bg-surface-200">
               {STATUS_LABELS[s]}
               <X size={12} />
             </button>
           ))}
           {memberChips.map(m => m && (
-            <button key={m.id} onClick={() => setFilters(f => ({ ...f, memberIds: f.memberIds.filter(id => id !== m.id) }))} className="chip hover:bg-cream-300">
+            <button key={m.id} onClick={() => setFilters(f => ({ ...f, memberIds: f.memberIds.filter(id => id !== m.id) }))} className="chip hover:bg-surface-200">
               <span className="w-2 h-2 rounded-full" style={{ backgroundColor: m.color }} />
               {m.name}
               <X size={12} />
             </button>
           ))}
           {(filters.dateRange.start || filters.dateRange.end) && (
-            <button onClick={() => setFilters(f => ({ ...f, dateRange: { start: null, end: null } }))} className="chip hover:bg-cream-300">
+            <button onClick={() => setFilters(f => ({ ...f, dateRange: { start: null, end: null } }))} className="chip hover:bg-surface-200">
               <CalIcon size={12} />
               {filters.dateRange.start ? fmtShort(filters.dateRange.start) : '…'}
               {' – '}
@@ -93,7 +93,7 @@ export function FilterBar() {
               <button
                 key={g}
                 onClick={() => setGroupBy(g)}
-                className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${groupBy === g ? 'bg-ink-900 text-cream-50' : 'text-ink-600 hover:bg-cream-200'}`}
+                className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${groupBy === g ? 'bg-ink-900 text-white' : 'text-ink-600 hover:bg-surface-100'}`}
               >
                 {g === 'none' ? 'None' : g[0].toUpperCase() + g.slice(1)}
               </button>
@@ -107,7 +107,7 @@ export function FilterBar() {
               <button
                 key={z}
                 onClick={() => setZoom(z)}
-                className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${zoom === z ? 'bg-ink-900 text-cream-50' : 'text-ink-600 hover:bg-cream-200'}`}
+                className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${zoom === z ? 'bg-ink-900 text-white' : 'text-ink-600 hover:bg-surface-100'}`}
               >
                 {z[0].toUpperCase() + z.slice(1)}
               </button>
@@ -116,12 +116,12 @@ export function FilterBar() {
         </div>
       </div>
 
-      {drawerOpen && <FilterDrawer onClose={() => setDrawerOpen(false)} />}
+      {drawerOpen && <FilterDrawer onClose={() => setDrawerOpen(false)} projectsV2={projectsV2 || []} />}
     </>
   )
 }
 
-function FilterDrawer({ onClose }: { onClose: () => void }) {
+function FilterDrawer({ onClose, projectsV2 }: { onClose: () => void; projectsV2: import('../../types').ProjectV2[] }) {
   const { filters, setFilters, data } = useApp()
   if (!data) return null
 
@@ -135,20 +135,20 @@ function FilterDrawer({ onClose }: { onClose: () => void }) {
   return (
     <div className="fixed inset-0 z-40 animate-fade-in">
       <div className="absolute inset-0 bg-ink-900/40 backdrop-blur-sm" onClick={onClose} />
-      <div className="absolute right-0 top-0 bottom-0 w-full sm:w-96 bg-cream-50 shadow-float flex flex-col animate-slide-up sm:animate-scale-in overflow-hidden">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-cream-300">
+      <div className="absolute right-0 top-0 bottom-0 w-full sm:w-96 bg-white shadow-float flex flex-col animate-slide-up sm:animate-scale-in overflow-hidden">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-surface-200">
           <h3 className="font-display font-semibold text-lg">Filters</h3>
           <button onClick={onClose} className="btn-ghost !p-1.5"><X size={18} /></button>
         </div>
         <div className="flex-1 overflow-y-auto tibbie-scroll p-5 space-y-6">
           <FilterSection title="Projects">
-            {data.projects.map(p => (
+            {(projectsV2 || []).filter(p => !p.archived).map(p => (
               <Checkbox key={p.id} checked={filters.projectIds.includes(p.id)} onChange={() => toggle('projectIds', p.id)}>
-                <span className="w-2 h-2 rounded-full mr-2" style={{ backgroundColor: p.color }} />
+                <span className="w-2 h-2 rounded-full mr-2" style={{ backgroundColor: p.color ?? '#8B8680' }} />
                 {p.name}
               </Checkbox>
             ))}
-            {data.projects.length === 0 && <p className="text-sm text-ink-400">No projects yet</p>}
+            {(projectsV2 || []).length === 0 && <p className="text-sm text-ink-400">No projects yet</p>}
           </FilterSection>
 
           <FilterSection title="Status">
@@ -199,7 +199,7 @@ function FilterSection({ title, children }: { title: string; children: React.Rea
 function Checkbox({ checked, onChange, children }: { checked: boolean; onChange: () => void; children: React.ReactNode }) {
   return (
     <label className="flex items-center gap-2 cursor-pointer text-sm py-1">
-      <input type="checkbox" checked={checked} onChange={onChange} className="rounded border-cream-300 text-rust-500 focus:ring-rust-400" />
+      <input type="checkbox" checked={checked} onChange={onChange} className="rounded border-surface-200 text-rust-500 focus:ring-rust-400" />
       <span className="flex items-center">{children}</span>
     </label>
   )

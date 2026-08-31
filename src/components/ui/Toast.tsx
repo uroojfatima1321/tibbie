@@ -13,10 +13,15 @@ export function ToastStack() {
         return (
           <div
             key={t.id}
-            className="pointer-events-auto flex items-center gap-3 pl-4 pr-2 py-2.5 rounded-xl bg-ink-900 text-cream-50 shadow-float animate-scale-in min-w-[260px] max-w-[90vw]"
+            className="pointer-events-auto flex items-center gap-3 pl-4 pr-2 py-2.5 rounded-xl bg-ink-900 text-white shadow-float animate-scale-in min-w-[260px] max-w-[90vw]"
           >
             <Icon size={16} className={tone} />
             <span className="text-sm flex-1">{t.text}</span>
+            {(t.count ?? 1) > 1 && (
+              <span className="text-[11px] font-bold px-1.5 py-0.5 rounded-full bg-white/20 shrink-0">
+                ×{t.count}
+              </span>
+            )}
             <button onClick={() => dismissToast(t.id)} className="p-1 rounded hover:bg-white/10" aria-label="Dismiss">
               <X size={14} />
             </button>

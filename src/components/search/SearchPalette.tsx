@@ -75,8 +75,8 @@ export function SearchPalette({ open, onClose, onSelectTask, onSelectProject, on
   return (
     <div className="fixed inset-0 z-50 animate-fade-in" onKeyDown={onKeyDown}>
       <div className="absolute inset-0 bg-ink-900/40 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative mx-auto mt-[10vh] w-[min(640px,92vw)] bg-cream-50 rounded-2xl shadow-float overflow-hidden animate-scale-in flex flex-col max-h-[70vh]">
-        <div className="flex items-center gap-3 px-4 py-3 border-b border-cream-300">
+      <div className="relative mx-auto mt-[10vh] w-[min(640px,92vw)] bg-white rounded-2xl shadow-float overflow-hidden animate-scale-in flex flex-col max-h-[70vh]">
+        <div className="flex items-center gap-3 px-4 py-3 border-b border-surface-200">
           {isSearching ? (
             <Loader2 size={18} className="text-ink-400 animate-spin" />
           ) : (
@@ -93,12 +93,12 @@ export function SearchPalette({ open, onClose, onSelectTask, onSelectProject, on
         </div>
 
         {query.trim().length >= 2 && (
-          <div className="flex items-center gap-1 px-3 py-2 border-b border-cream-300 overflow-x-auto">
+          <div className="flex items-center gap-1 px-3 py-2 border-b border-surface-200 overflow-x-auto">
             {(['all', 'project', 'task', 'member'] as Cat[]).map(c => (
               <button
                 key={c}
                 onClick={() => setCat(c)}
-                className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors whitespace-nowrap ${cat === c ? 'bg-ink-900 text-cream-50' : 'text-ink-600 hover:bg-cream-200'}`}
+                className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors whitespace-nowrap ${cat === c ? 'bg-ink-900 text-white' : 'text-ink-600 hover:bg-surface-100'}`}
               >
                 {c === 'all' ? 'All' : c[0].toUpperCase() + c.slice(1) + 's'}
                 {counts[c] > 0 && <span className="ml-1.5 opacity-60">{counts[c]}</span>}
@@ -157,7 +157,7 @@ export function SearchPalette({ open, onClose, onSelectTask, onSelectProject, on
           )}
         </div>
 
-        <div className="px-4 py-2 border-t border-cream-300 flex items-center gap-3 text-[11px] text-ink-400">
+        <div className="px-4 py-2 border-t border-surface-200 flex items-center gap-3 text-[11px] text-ink-400">
           <KbdHint k="↑↓">navigate</KbdHint>
           <KbdHint k="↵">open</KbdHint>
           <KbdHint k="Esc">close</KbdHint>
@@ -186,7 +186,7 @@ function ResultRow({ result, query, isHighlighted, onClick, icon }: {
   return (
     <button
       onClick={onClick}
-      className={`w-full flex items-start gap-3 px-4 py-2 text-left transition-colors ${isHighlighted ? 'bg-rust-500/10' : 'hover:bg-cream-100'}`}
+      className={`w-full flex items-start gap-3 px-4 py-2 text-left transition-colors ${isHighlighted ? 'bg-rust-500/10' : 'hover:bg-surface-50'}`}
     >
       <span className="mt-0.5 text-ink-400">{icon}</span>
       <span className="flex-1 min-w-0">
@@ -207,7 +207,7 @@ function ResultRow({ result, query, isHighlighted, onClick, icon }: {
 function KbdHint({ k, children }: { k: string; children: React.ReactNode }) {
   return (
     <span className="flex items-center gap-1">
-      <kbd className="font-mono text-[10px] px-1 py-0.5 rounded bg-cream-200 text-ink-600">{k}</kbd>
+      <kbd className="font-mono text-[10px] px-1 py-0.5 rounded bg-surface-100 text-ink-600">{k}</kbd>
       <span>{children}</span>
     </span>
   )
