@@ -1,15 +1,12 @@
 import { useState, useMemo } from 'react'
 import { X, Plus, Archive, Tag as TagIcon, Wrench as WrenchIcon, AlertTriangle, Handshake } from 'lucide-react'
 import { format, parseISO } from 'date-fns'
-import type { ProjectV2, ProjectStatus, EffortSize, Milestone } from '../../types'
+import type { ProjectV2, ProjectStatus, Milestone } from '../../types'
 import { useApp } from '../../store/context'
 import { useDraftField } from '../../lib/useDraftField'
 import { ModalDialog } from '../ui/ModalDialog'
 import { StatusPill, ALL_PROJECT_STATUSES, getStatusLabel } from './StatusPill'
 import { StatusPicker } from './StatusPicker'
-import { RiceEditor } from './RiceEditor'
-import { WsjfEditor } from './WsjfEditor'
-import { MustDoModal } from './MustDoModal'
 import { ConfirmDialog as Confirm } from '../ui/Confirm'
 import { TracksSection } from './TracksSection'
 import { PortfolioCombobox } from './PortfolioCombobox'
@@ -17,12 +14,10 @@ import { ModulesSection } from './ModulesSection'
 import { TasksSection } from './TasksSection'
 import { ActivityLog } from './ActivityLog'
 import { LIVE_GROUP_STATUSES } from '../../lib/filterV2'
-import { DELIVERY_EXCLUDED_STATUSES } from '../../lib/rank'
 
 const TERMINAL_STATUSES = ['shipped', 'killed']
 
 const STATUSES_NEEDING_REASON: ProjectStatus[] = ['on_hold', 'killed']
-const EFFORT_SIZES: EffortSize[] = ['S', 'M', 'L', 'XL']
 const MS_STATUS_COLOR: Record<string, string> = {
   upcoming: '#3A6B8A', hit: '#2F5743', missed: '#A83D2F', moved: '#C8932F',
 }
@@ -31,17 +26,15 @@ interface Props { projectId: string | null; onClose: () => void; onOpenModule?: 
 
 export function ProjectDrawer({ projectId, onClose, onOpenModule, onOpenFeature }: Props) {
   const {
-    editMode, projectsV2, featuresV2, modulesV2, rankedItemIds, data,
+    editMode, projectsV2, featuresV2, modulesV2, data,
     updateProjectV2, archiveProjectV2,
     addProjectV2StatusLog, addProjectV2Decision,
     addProjectV2Milestone, updateProjectV2Milestone,
-    framework,
   } = useApp()
 
   const project = useMemo(() => projectsV2.find(p => p.id === projectId) ?? null, [projectsV2, projectId])
   const childFeatures = useMemo(() => featuresV2.filter(f => f.projectId === projectId), [featuresV2, projectId])
   const childModules  = useMemo(() => modulesV2.filter(m => m.projectId === projectId), [modulesV2, projectId])
-  const rankOf = (id: string) => { const i = rankedItemIds.indexOf(id); return i >= 0 ? i + 1 : null }
 
   // P-6: portfolio inline editing
   const [portfolioEdit, setPortfolioEdit] = useState<string | null>(null)
@@ -80,7 +73,6 @@ export function ProjectDrawer({ projectId, onClose, onOpenModule, onOpenFeature 
   const [discardConfirm, setDiscardConfirm] = useState(false)
   const [editName, setEditName]           = useState(false)
   const [nameValue, setNameValue]         = useState('')
-  const [mustDoOpen, setMustDoOpen]       = useState(false)
 
   function handleClose() {
     if (isAnyDirty) { setDiscardConfirm(true); return }
@@ -152,14 +144,6 @@ export function ProjectDrawer({ projectId, onClose, onOpenModule, onOpenFeature 
                   {project.portfolio}
                 </button>
               )}
-              {/* Phase B: Must-Do badge */}
-              {project.mustDo && (
-                <button onClick={() => editMode && setMustDoOpen(true)}
-                  className={`font-sans text-[11px] font-semibold bg-brick-600 text-white px-2 py-0.5 rounded-full ${editMode ? 'hover:bg-brick-700 cursor-pointer' : 'cursor-default'}`}
-                  title={`Must-Do: ${project.mustDo.reason}`}>
-                  Must-Do
-                </button>
-              )}
               {/* Phase B: client timeline chip */}
               {project.clientTimeline && (
                 <span className="font-sans text-[10px] font-medium text-amber-600 border border-amber-400 px-1.5 py-0.5 rounded-full flex items-center gap-1"
@@ -219,14 +203,7 @@ export function ProjectDrawer({ projectId, onClose, onOpenModule, onOpenFeature 
               <div className="flex items-center gap-6 flex-wrap">
                 <div>
                   <p className="text-[10px] uppercase tracking-wider font-semibold text-ink-500 mb-1">Dev. Effort</p>
-                  <div className="flex items-center gap-1">
-                    {EFFORT_SIZES.map(s => (
-                      <button key={s} onClick={() => editMode && updateProjectV2(project.id, { effortEstimate: project.effortEstimate === s ? undefined : s })}
-                        className={`font-mono text-xs px-2.5 py-1 rounded-md border transition-colors ${project.effortEstimate === s ? 'bg-ink-900 text-white border-ink-900' : 'border-surface-300 text-ink-600 hover:border-ink-400'} ${!editMode ? 'cursor-default' : ''}`}>
-                        {s}
-                      </button>
-                    ))}
-                  </div>
+                  <div className="flex items-center gap-1">                  </div>
                 </div>
                 <div>
                   <p className="text-[10px] uppercase tracking-wider font-semibold text-ink-500 mb-1">Target Quarter</p>
@@ -250,31 +227,6 @@ export function ProjectDrawer({ projectId, onClose, onOpenModule, onOpenFeature 
                   </label>
                 </div>
               )}
-
-              {/* Phase B: Must-Do action */}
-              {editMode && (
-                <div>
-                  <button onClick={() => setMustDoOpen(true)}
-                    className={`text-xs flex items-center gap-1.5 px-2.5 py-1 rounded-lg border transition-colors ${
-                      project.mustDo
-                        ? 'bg-brick-50 border-brick-300 text-brick-600 hover:bg-brick-100'
-                        : 'border-surface-200 text-ink-500 hover:border-surface-300 hover:bg-surface-50'
-                    }`}>
-                    <AlertTriangle size={11} />
-                    {project.mustDo ? 'Manage Must-Do tag' : 'Mark as Must-Do'}
-                  </button>
-                </div>
-              )}
-
-              {/* Scoring editor — adapts to active framework. EXC-3 F: disabled for all in-delivery projects */}
-              {framework === 'wsjf'
-                ? <WsjfEditor projectId={project.id} kind="project"
-                    mustDoReason={project.mustDo?.reason}
-                    isLive={DELIVERY_EXCLUDED_STATUSES.includes(project.status)} />
-                : <RiceEditor projectId={project.id} kind="project"
-                    mustDoReason={project.mustDo?.reason}
-                    isLive={DELIVERY_EXCLUDED_STATUSES.includes(project.status)} />
-              }
 
               {/* Retro notes */}
               {['production','production_monitoring','mvp_live','killed'].includes(project.status) && (
@@ -429,16 +381,6 @@ export function ProjectDrawer({ projectId, onClose, onOpenModule, onOpenFeature 
         danger
         onConfirm={() => { setDiscardConfirm(false); onClose() }}
         onClose={() => setDiscardConfirm(false)}
-      />
-
-      <MustDoModal
-        open={mustDoOpen}
-        itemId={project.id}
-        kind="project"
-        itemName={project.name}
-        existingReason={project.mustDo?.reason ?? null}
-        onClose={() => setMustDoOpen(false)}
-      />
-    </>
+      />    </>
   )
 }

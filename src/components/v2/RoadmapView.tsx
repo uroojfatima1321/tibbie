@@ -13,11 +13,10 @@ import { ProjectCard } from './ProjectCard'
 import { ModuleCard } from './ModuleCard'
 import { FeatureCard } from './FeatureCard'
 import { InfoTip } from './InfoTip'
-import { isValidRice, safeRiceScore } from '../../lib/filterV2'
+import { applyV2Filter, type V2FilterState } from '../../lib/filterV2'
 import { FilterBarV2 } from './FilterBarV2'
 import { ExportButton } from './ExportModal'
 import { RoadmapExportLayout } from './RoadmapExportLayout'
-import { applyV2Filter, type V2FilterState } from '../../lib/filterV2'
 import { RoadmapBulkBar } from './RoadmapBulkBar'
 import { RoadmapKebabMenu, type KebabTarget } from './RoadmapKebabMenu'
 
@@ -31,13 +30,8 @@ interface Props {
   onFilterChange: (f: V2FilterState) => void
 }
 
-function computeTopRice(features: FeatureV2[]): number | null {
-  const scores = features.map(f => safeRiceScore(f.rice)).filter((s): s is number => s !== null)
-  return scores.length > 0 ? Math.max(...scores) : null
-}
-
 export function RoadmapView({ onOpenProject, onOpenModule, onOpenFeature, onNewProject, onNewFeature, filter, onFilterChange }: Props) {
-  const { projectsV2, featuresV2, modulesV2, data, rankedItemIds, editMode, localMode, loadDemoData } = useApp()
+  const { projectsV2, featuresV2, modulesV2, data, editMode, localMode, loadDemoData } = useApp()
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [kebab, setKebab] = useState<KebabTarget | null>(null)
@@ -59,10 +53,6 @@ export function RoadmapView({ onOpenProject, onOpenModule, onOpenFeature, onNewP
   const filteredModuleIds   = new Set(filtered.filter(i => i.kind === 'module').map(i => i.id))
 
   const members = data?.members || []
-
-  function rankOf(id: string): number | null {
-    const i = rankedItemIds.indexOf(id); return i >= 0 ? i + 1 : null
-  }
 
   // ── Section 1: Products ───────────────────────────────────────────────────
   const productPortfolios = useMemo(() => {
@@ -197,11 +187,9 @@ export function RoadmapView({ onOpenProject, onOpenModule, onOpenFeature, onNewP
                       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                         {projects.map((project, i) => {
                           const pFeatures = featuresByProject[project.id] || []
-                          const topRice = computeTopRice(pFeatures)
                           return (
                             <ProjectCard key={project.id} project={project} index={i}
-                              rank={rankOf(project.id)} totalScored={rankedItemIds.length}
-                              features={pFeatures} members={members} topRiceScore={topRice}
+                              features={pFeatures} members={members}
                               onOpen={() => onOpenProject(project.id)}
                               onKebab={e => openKebab(e, project.id, 'project', project.status)} />
                           )
@@ -228,7 +216,6 @@ export function RoadmapView({ onOpenProject, onOpenModule, onOpenFeature, onNewP
                           const modParent = projectsV2.find(p => p.id === mod.projectId) ?? null
                           return (
                             <ModuleCard key={mod.id} module_={mod}
-                              rank={rankOf(mod.id)} totalScored={rankedItemIds.length}
                               childFeatures={mFeatures} members={members}
                               parentProject={modParent}
                               onOpen={() => onOpenModule(mod.id)}
@@ -257,7 +244,6 @@ export function RoadmapView({ onOpenProject, onOpenModule, onOpenFeature, onNewP
                           const parentProject = f.projectId ? projectsV2.find(p => p.id === f.projectId) ?? null : null
                           return (
                             <FeatureCard key={f.id} feature={f}
-                              rank={rankOf(f.id)} totalScored={rankedItemIds.length}
                               parentProject={parentProject}
                               parentModule={fMod ? { id: fMod.id, name: fMod.name } : null}
                               onOpen={() => onOpenFeature(f.id)}

@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
-import { SlidersHorizontal, X, Star, ChevronDown } from 'lucide-react'
+import { SlidersHorizontal, X, ChevronDown } from 'lucide-react'
 import { useApp } from '../../store/context'
 import { Avatar } from '../members/Avatar'
-import { type V2FilterState, EMPTY_FILTER, filterToParams, paramsToFilter, isFilterEmpty, BUILT_IN_PRESETS, isValidRice, safeRiceScore } from '../../lib/filterV2'
+import { type V2FilterState, EMPTY_FILTER, isFilterEmpty, filterToParams, paramsToFilter } from '../../lib/filterV2'
 
 interface Props {
   filter: V2FilterState
@@ -25,7 +25,6 @@ const STATUS_LABELS: Record<string, string> = {
   shipped: 'Shipped', on_hold: 'On Hold', rework: 'Rework', killed: 'Killed',
 }
 
-const EFFORT_SIZES = ['S', 'M', 'L', 'XL'] as const
 
 export function FilterBarV2({ filter, onChange }: Props) {
   const { projectsV2, featuresV2, data, modulesV2, userPresets, saveUserPreset, deleteUserPreset } = useApp()
@@ -33,9 +32,6 @@ export function FilterBarV2({ filter, onChange }: Props) {
   const [portfolioOpen, setPortfolioOpen] = useState(false)
   const [ownerOpen, setOwnerOpen] = useState(false)
   const [quarterOpen, setQuarterOpen] = useState(false)
-  const [presetOpen, setPresetOpen] = useState(false)
-  const [savingPreset, setSavingPreset] = useState(false)
-  const [presetName, setPresetName] = useState('')
   // BUG-1 (A): module dropdown needs proper open/close state — was always-visible when no moduleId set
   const [moduleDropdownOpen, setModuleDropdownOpen] = useState(false)
   const moduleDropdownRef = useRef<HTMLDivElement>(null)
@@ -67,11 +63,9 @@ export function FilterBarV2({ filter, onChange }: Props) {
     return [...qs].sort()
   }, [projectsV2])
 
-  const allScores = [...projectsV2, ...featuresV2].map(i => safeRiceScore(i.rice)).filter((s): s is number => s !== null)
-  const maxScore = allScores.length ? Math.ceil(Math.max(...allScores)) : 100
 
   function set<K extends keyof V2FilterState>(key: K, val: V2FilterState[K]) {
-    onChange({ ...filter, [key]: val, preset: key === 'preset' ? (val as string | null) : null })
+    onChange({ ...filter, [key]: val })
   }
   function setModule(id: string | null) { set('moduleId', id) }
   function toggleStatus(s: string) {
@@ -82,86 +76,20 @@ export function FilterBarV2({ filter, onChange }: Props) {
     const next = filter.ownerIds.includes(id) ? filter.ownerIds.filter(x => x !== id) : [...filter.ownerIds, id]
     set('ownerIds', next)
   }
-  function toggleEffort(s: typeof EFFORT_SIZES[number]) {
-    const next = filter.effortSizes.includes(s) ? filter.effortSizes.filter(x => x !== s) : [...filter.effortSizes, s]
-    set('effortSizes', next)
-  }
   function toggleFlag(key: keyof V2FilterState['flags']) {
     set('flags', { ...filter.flags, [key]: !filter.flags[key] })
-  }
-  function applyPreset(name: string) {
-    onChange({ ...EMPTY_FILTER, preset: name })
-    setPresetOpen(false)
-  }
-  async function handleSavePreset() {
-    if (!presetName.trim()) return
-    await saveUserPreset(presetName.trim(), filter as unknown as Record<string, unknown>)
-    setSavingPreset(false); setPresetName('')
   }
 
   const empty = isFilterEmpty(filter)
   const activeCount = [
     filter.statuses.length, filter.portfolios.length, filter.ownerIds.length,
-    filter.effortSizes.length, filter.riceMin !== null ? 1 : 0, filter.riceMax !== null ? 1 : 0,
-    filter.quarter ? 1 : 0, ...Object.values(filter.flags).map(v => v ? 1 : 0),
-    filter.preset ? 1 : 0,
+    filter.quarter ? 1 : 0, filter.moduleId ? 1 : 0,
+    ...Object.values(filter.flags).map(v => v ? 1 : 0),
   ].reduce((a, b) => a + b, 0)
-
-  const builtInNames = Object.keys(BUILT_IN_PRESETS)
 
   return (
     <div className="border-b border-surface-200 bg-white px-4 sm:px-6 py-2 flex items-center gap-2 flex-wrap shrink-0">
       <SlidersHorizontal size={13} className="text-ink-400 shrink-0" />
-
-      {/* Preset picker */}
-      <div className="relative">
-        <button onClick={() => setPresetOpen(v => !v)}
-          className={`flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full border transition-colors ${filter.preset ? 'bg-rust-50 border-rust-300 text-rust-600' : 'border-surface-200 text-ink-500 hover:border-surface-300'}`}>
-          <Star size={11} />
-          {filter.preset ?? 'Presets'}
-          <ChevronDown size={11} />
-        </button>
-        {presetOpen && (
-          <div className="absolute top-full left-0 mt-1 w-48 bg-white border border-surface-200 rounded-xl shadow-float z-30 py-1 animate-fade-in">
-            <p className="px-3 py-1 text-[10px] uppercase tracking-wider font-semibold text-ink-400">Built-in</p>
-            {builtInNames.map(name => (
-              <button key={name} onClick={() => applyPreset(name)}
-                className={`w-full text-left px-3 py-2 text-sm hover:bg-surface-50 transition-colors ${filter.preset === name ? 'text-rust-600 font-medium' : 'text-ink-700'}`}>
-                {name}
-              </button>
-            ))}
-            {userPresets.length > 0 && (
-              <>
-                <div className="border-t border-surface-100 my-1" />
-                <p className="px-3 py-1 text-[10px] uppercase tracking-wider font-semibold text-ink-400">Saved</p>
-                {userPresets.map(p => (
-                  <div key={p.name} className="flex items-center group">
-                    <button onClick={() => { onChange(p.filter as unknown as V2FilterState); setPresetOpen(false) }}
-                      className="flex-1 text-left px-3 py-2 text-sm hover:bg-surface-50 text-ink-700 transition-colors truncate">{p.name}</button>
-                    <button onClick={() => deleteUserPreset(p.name)} className="pr-2 opacity-0 group-hover:opacity-100 text-ink-400 hover:text-brick-500 transition-colors">
-                      <X size={12} />
-                    </button>
-                  </div>
-                ))}
-              </>
-            )}
-            <div className="border-t border-surface-100 mt-1 pt-1 px-3 pb-2">
-              {savingPreset ? (
-                <div className="flex items-center gap-1.5">
-                  <input autoFocus className="input flex-1 text-xs !py-1" placeholder="Preset name" value={presetName}
-                    onChange={e => setPresetName(e.target.value)}
-                    onKeyDown={e => { if (e.key === 'Enter') handleSavePreset(); if (e.key === 'Escape') setSavingPreset(false) }} />
-                  <button onClick={handleSavePreset} className="text-xs text-rust-500 font-medium">Save</button>
-                </div>
-              ) : (
-                <button onClick={() => setSavingPreset(true)} className="text-xs text-ink-500 hover:text-ink-800 transition-colors">
-                  + Save current filters…
-                </button>
-              )}
-            </div>
-          </div>
-        )}
-      </div>
 
       {/* Status */}
       <div className="relative">
@@ -230,31 +158,6 @@ export function FilterBarV2({ filter, onChange }: Props) {
           )}
         </div>
       )}
-
-      {/* Effort sizes */}
-      <div className="flex items-center gap-0.5">
-        {EFFORT_SIZES.map(s => (
-          <button key={s} onClick={() => toggleEffort(s)}
-            className={`font-mono text-xs px-2 py-0.5 rounded border transition-colors ${filter.effortSizes.includes(s) ? 'bg-ink-900 text-white border-ink-900' : 'border-surface-200 text-ink-500 hover:border-ink-400'}`}>
-            {s}
-          </button>
-        ))}
-      </div>
-
-      {/* RICE range */}
-      {allScores.length > 0 && (
-        <div className="flex items-center gap-1 text-xs text-ink-500">
-          <span className="shrink-0">RICE</span>
-          <input type="number" min={0} max={maxScore} step={0.5} placeholder="min"
-            className="w-14 font-mono text-xs border border-surface-200 rounded px-1.5 py-0.5 outline-none focus:ring-1 focus:ring-rust-400"
-            value={filter.riceMin ?? ''} onChange={e => set('riceMin', e.target.value ? Number(e.target.value) : null)} />
-          <span>–</span>
-          <input type="number" min={0} max={maxScore} step={0.5} placeholder="max"
-            className="w-14 font-mono text-xs border border-surface-200 rounded px-1.5 py-0.5 outline-none focus:ring-1 focus:ring-rust-400"
-            value={filter.riceMax ?? ''} onChange={e => set('riceMax', e.target.value ? Number(e.target.value) : null)} />
-        </div>
-      )}
-
       {/* Quarter */}
       {quarters.length > 0 && (
         <div className="relative">
@@ -306,14 +209,9 @@ export function FilterBarV2({ filter, onChange }: Props) {
       )}
 
       {/* Flag chips */}
-      {([
-        { key: 'unscored' as const, label: 'Unscored', activeClass: 'bg-amber-50 border-amber-300 text-amber-600' },
-        { key: 'stale' as const, label: 'Stale score', activeClass: 'bg-amber-50 border-amber-300 text-amber-600' },
-        { key: 'onHold' as const, label: 'On hold', activeClass: 'bg-amber-50 border-amber-300 text-amber-600' },
+      {([        { key: 'onHold' as const, label: 'On hold', activeClass: 'bg-amber-50 border-amber-300 text-amber-600' },
         { key: 'inRework' as const, label: 'In rework', activeClass: 'bg-amber-50 border-amber-300 text-amber-600' },
-        { key: 'blockedTracks' as const, label: 'Blocked tracks', activeClass: 'bg-amber-50 border-amber-300 text-amber-600' },
-        { key: 'mustDo' as const, label: 'Must-Do', activeClass: 'bg-brick-50 border-brick-300 text-brick-600' },
-        { key: 'clientTimeline' as const, label: 'Client timeline', activeClass: 'bg-amber-50 border-amber-300 text-amber-600' },
+        { key: 'blockedTracks' as const, label: 'Blocked tracks', activeClass: 'bg-amber-50 border-amber-300 text-amber-600' },        { key: 'clientTimeline' as const, label: 'Client timeline', activeClass: 'bg-amber-50 border-amber-300 text-amber-600' },
       ] as const).map(({ key, label, activeClass }) => (
         <button key={key} onClick={() => toggleFlag(key)}
           className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${filter.flags[key] ? activeClass : 'border-surface-200 text-ink-400 hover:border-surface-300'}`}>

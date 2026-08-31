@@ -1,10 +1,11 @@
 import { useState, useRef, useEffect } from 'react'
-import { Search, Lock, LockOpen, Plus, Menu, ChevronDown, Trash2, Download, Users, CalendarOff, Save, Loader2, Settings } from 'lucide-react'
+import { Search, Lock, LockOpen, Plus, Menu, ChevronDown, Trash2, Download, Users, CalendarOff, Save, Loader2 } from 'lucide-react'
 import { Logo } from './Logo'
 import { PinGate } from './PinGate'
+import { getV4PruneCount } from '../../lib/migrate'
 import { useApp } from '../../store/context'
 
-export type TopView = 'roadmap' | 'prioritize' | 'timeline' | 'archive'
+export type TopView = 'roadmap' | 'timeline' | 'archive'
 
 interface Props {
   topView: TopView
@@ -16,17 +17,15 @@ interface Props {
   onOpenBackup: () => void
   onOpenMembers: () => void
   onOpenHolidays: () => void
-  onOpenSettings: () => void
 }
 
 const NAV_ITEMS: { id: TopView; label: string }[] = [
-  { id: 'roadmap',    label: 'Roadmap' },
-  { id: 'prioritize', label: 'Prioritize' },
-  { id: 'timeline',   label: 'Timeline' },
-  { id: 'archive',    label: 'Archive' },
+  { id: 'roadmap',  label: 'Roadmap' },
+  { id: 'timeline', label: 'Timeline' },
+  { id: 'archive',  label: 'Archive' },
 ]
 
-export function Nav({ topView, onNav, onOpenSearch, onNew, onOpenMenu, onOpenCleanup, onOpenBackup, onOpenMembers, onOpenHolidays, onOpenSettings }: Props) {
+export function Nav({ topView, onNav, onOpenSearch, onNew, onOpenMenu, onOpenCleanup, onOpenBackup, onOpenMembers, onOpenHolidays }: Props) {
   const { editMode, pinConfigured, localMode, loadDiagnostic, isDirty, stagedCount, isSaving, saveNow } = useApp()
   const [gateOpen, setGateOpen] = useState(false)
   const [diagOpen, setDiagOpen] = useState(false)
@@ -99,7 +98,7 @@ export function Nav({ topView, onNav, onOpenSearch, onNew, onOpenMenu, onOpenCle
             </button>
           )}
 
-          {/* Members & Holidays & Settings — always accessible on desktop */}
+          {/* Members & Holidays — always accessible on desktop */}
           <button onClick={onOpenMembers} title="Team members"
             className="shrink-0 hidden md:inline-flex btn-ghost !p-2 text-xs gap-1 items-center text-ink-500">
             <Users size={13} /> Members
@@ -108,10 +107,14 @@ export function Nav({ topView, onNav, onOpenSearch, onNew, onOpenMenu, onOpenCle
             className="shrink-0 hidden md:inline-flex btn-ghost !p-2 text-xs gap-1 items-center text-ink-500">
             <CalendarOff size={13} /> Holidays
           </button>
-          <button onClick={onOpenSettings} title="Workspace settings (scoring framework)"
-            className="shrink-0 hidden md:inline-flex btn-ghost !p-2 text-xs gap-1 items-center text-ink-500">
-            <Settings size={13} /> Settings
-          </button>
+
+          {/* Diagnostics — always openable (not gated by localMode) so Batch A prune count is visible post-deploy */}
+          {(localMode || getV4PruneCount() > 0) && (
+            <button onClick={() => setDiagOpen(true)} title="System diagnostics"
+              className={`shrink-0 hidden md:inline-flex btn-ghost !p-2 text-xs gap-1 items-center ${localMode ? 'text-amber-600' : 'text-forest-600'}`}>
+              ⓘ Diagnostics
+            </button>
+          )}
 
           {/* Cleanup + Backup */}
           {editMode && (
@@ -162,50 +165,70 @@ export function Nav({ topView, onNav, onOpenSearch, onNew, onOpenMenu, onOpenCle
       </header>
       <PinGate open={gateOpen} onClose={() => setGateOpen(false)} />
 
-      {/* Diagnostic overlay — shown when user clicks the Local mode badge */}
+      {/* Diagnostic overlay — openable from Diagnostics button or Local mode badge */}
       {diagOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40" onClick={() => setDiagOpen(false)}>
           <div className="bg-white rounded-2xl shadow-float max-w-md w-full p-6 space-y-4" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between">
-              <h2 className="font-display text-lg font-semibold text-ink-900">Why is Local mode active?</h2>
+              <h2 className="font-display text-lg font-semibold text-ink-900">System diagnostics</h2>
               <button onClick={() => setDiagOpen(false)} className="text-ink-400 hover:text-ink-700 p-1 rounded-lg hover:bg-surface-100 transition-colors">✕</button>
             </div>
-            <p className="text-sm text-ink-600">
-              The app couldn't reach the remote data API. Changes you make are held in memory only and <strong>will be lost on refresh</strong>.
-              The app will automatically retry on the next data refresh — if the API recovers, Local mode will clear on its own.
-            </p>
-            {loadDiagnostic ? (
-              <div className="bg-surface-50 border border-surface-200 rounded-xl p-4 space-y-2 font-mono text-xs">
-                <div className="flex gap-3">
-                  <span className="text-ink-400 shrink-0 w-20">URL</span>
-                  <span className="text-ink-900">{loadDiagnostic.url}</span>
-                </div>
-                <div className="flex gap-3">
-                  <span className="text-ink-400 shrink-0 w-20">Status</span>
-                  <span className={loadDiagnostic.status ? 'text-brick-600' : 'text-amber-600'}>
-                    {loadDiagnostic.status ?? 'Network error (no HTTP response)'}
-                  </span>
-                </div>
-                <div className="flex gap-3">
-                  <span className="text-ink-400 shrink-0 w-20">Error</span>
-                  <span className="text-brick-700 break-all">{loadDiagnostic.message}</span>
-                </div>
-                {loadDiagnostic.responseSnippet && (
-                  <div className="flex gap-3">
-                    <span className="text-ink-400 shrink-0 w-20">Response</span>
-                    <span className="text-ink-600 break-all">{loadDiagnostic.responseSnippet}</span>
-                  </div>
-                )}
-                <div className="flex gap-3">
-                  <span className="text-ink-400 shrink-0 w-20">Time</span>
-                  <span className="text-ink-500">{new Date(loadDiagnostic.timestamp).toLocaleTimeString()}</span>
-                </div>
+
+            {/* Batch A migration preflight — shown whenever overlay is open, regardless of localMode */}
+            {getV4PruneCount() > 0 ? (
+              <div className="bg-forest-50 border border-forest-200 rounded-xl p-3 space-y-1">
+                <p className="text-xs font-semibold text-forest-800">Batch A migration ran this session</p>
+                <p className="text-xs font-mono text-forest-700">
+                  Pruned {getV4PruneCount()} scoring field(s) from KV records (schemaVersion 4).
+                  Export a fresh backup to verify — rice, wsjf, mustDo, valueRating, effortEstimate
+                  should be absent from all projectsV2 / featuresV2 / modulesV2 entries.
+                </p>
               </div>
             ) : (
-              <p className="text-xs text-ink-400 font-mono">No diagnostic data captured — failure may have occurred before diagnostic tracking initialized.</p>
+              <p className="text-xs text-ink-400">Batch A migration: not run this session (data already at schemaVersion 4).</p>
             )}
-            <div className="flex justify-between items-center">
-              <p className="text-xs text-ink-400">Changes not saved · Refresh to retry immediately</p>
+
+            {localMode && (
+              <>
+                <p className="text-sm text-ink-600">
+                  The app couldn't reach the remote data API. Changes you make are held in memory only and <strong>will be lost on refresh</strong>.
+                  The app will automatically retry on the next data refresh — if the API recovers, Local mode will clear on its own.
+                </p>
+                {loadDiagnostic ? (
+                  <div className="bg-surface-50 border border-surface-200 rounded-xl p-4 space-y-2 font-mono text-xs">
+                    <div className="flex gap-3">
+                      <span className="text-ink-400 shrink-0 w-20">URL</span>
+                      <span className="text-ink-900">{loadDiagnostic.url}</span>
+                    </div>
+                    <div className="flex gap-3">
+                      <span className="text-ink-400 shrink-0 w-20">Status</span>
+                      <span className={loadDiagnostic.status ? 'text-brick-600' : 'text-amber-600'}>
+                        {loadDiagnostic.status ?? 'Network error (no HTTP response)'}
+                      </span>
+                    </div>
+                    <div className="flex gap-3">
+                      <span className="text-ink-400 shrink-0 w-20">Error</span>
+                      <span className="text-brick-700 break-all">{loadDiagnostic.message}</span>
+                    </div>
+                    {loadDiagnostic.responseSnippet && (
+                      <div className="flex gap-3">
+                        <span className="text-ink-400 shrink-0 w-20">Response</span>
+                        <span className="text-ink-600 break-all">{loadDiagnostic.responseSnippet}</span>
+                      </div>
+                    )}
+                    <div className="flex gap-3">
+                      <span className="text-ink-400 shrink-0 w-20">Time</span>
+                      <span className="text-ink-500">{new Date(loadDiagnostic.timestamp).toLocaleTimeString()}</span>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-xs text-ink-400 font-mono">No diagnostic data captured — failure may have occurred before diagnostic tracking initialized.</p>
+                )}
+              </>
+            )}
+
+            <div className="flex justify-end">
+              {localMode && <p className="text-xs text-ink-400 mr-auto">Changes not saved · Refresh to retry immediately</p>}
               <button onClick={() => setDiagOpen(false)} className="btn-outline !py-1.5 !text-sm">Close</button>
             </div>
           </div>

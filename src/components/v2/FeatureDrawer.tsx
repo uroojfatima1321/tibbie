@@ -1,13 +1,10 @@
 import { useState, useMemo, useRef, useEffect } from 'react'
 import { X, Archive, AlertTriangle } from 'lucide-react'
 import { format, parseISO } from 'date-fns'
-import type { FeatureV2, FeatureStatus, EffortSize } from '../../types'
+import type { FeatureV2, FeatureStatus } from '../../types'
 import { useApp } from '../../store/context'
 import { useDraftField } from '../../lib/useDraftField'
 import { ModalDialog } from '../ui/ModalDialog'
-import { RiceEditor } from './RiceEditor'
-import { WsjfEditor } from './WsjfEditor'
-import { MustDoModal } from './MustDoModal'
 import { StatusPill, ALL_FEATURE_STATUSES, getStatusLabel } from './StatusPill'
 import { StatusPicker } from './StatusPicker'
 import { ActivityLog } from './ActivityLog'
@@ -15,7 +12,6 @@ import { ConfirmDialog as Confirm } from '../ui/Confirm'
 
 const STATUSES_NEEDING_REASON: FeatureStatus[] = ['on_hold', 'killed']
 const REWORK_GATES = ['architecture', 'code_review', 'qa'] as const
-const EFFORT_SIZES: EffortSize[] = ['S', 'M', 'L', 'XL']
 
 interface Props {
   featureId: string | null
@@ -24,9 +20,8 @@ interface Props {
 }
 
 export function FeatureDrawer({ featureId, onClose, scrollToRice }: Props) {
-  const { data, featuresV2, projectsV2, rankedItemIds,
-    updateFeatureV2, addFeatureV2StatusLog, addFeatureV2Decision, archiveFeatureV2, editMode,
-    framework } = useApp()
+  const { data, featuresV2, projectsV2,
+    updateFeatureV2, addFeatureV2StatusLog, addFeatureV2Decision, archiveFeatureV2, editMode, } = useApp()
 
   const feature      = useMemo(() => featuresV2.find(f => f.id === featureId) ?? null, [featuresV2, featureId])
   const parentProject = useMemo(() => feature?.projectId ? projectsV2.find(p => p.id === feature.projectId) ?? null : null, [feature, projectsV2])
@@ -52,12 +47,9 @@ export function FeatureDrawer({ featureId, onClose, scrollToRice }: Props) {
   const [discardConfirm, setDiscardConfirm] = useState(false)
   const [editName, setEditName]           = useState(false)
   const [nameValue, setNameValue]         = useState('')
-  const [mustDoOpen, setMustDoOpen]       = useState(false)
 
   if (!feature) return null
 
-  const rank        = rankedItemIds.indexOf(feature.id)
-  const reworkCount = feature.statusLog.filter(e => e.to === 'rework').length
 
   function handleClose() {
     if (oneLinDraft.isDirty) { setDiscardConfirm(true); return }
@@ -109,15 +101,6 @@ export function FeatureDrawer({ featureId, onClose, scrollToRice }: Props) {
                 editMode={editMode}
                 onSelect={s => setPendingStatus(s as FeatureStatus)}
               />
-              {rank >= 0 && !feature.mustDo && <span className="font-mono text-[11px] bg-rust-500 text-white px-2 py-0.5 rounded-full">#{rank + 1}</span>}
-              {feature.mustDo && (
-                <button onClick={() => editMode && setMustDoOpen(true)}
-                  className={`font-sans text-[11px] font-semibold bg-brick-600 text-white px-2 py-0.5 rounded-full ${editMode ? 'hover:bg-brick-700 cursor-pointer' : 'cursor-default'}`}
-                  title={`Must-Do: ${feature.mustDo.reason}`}>
-                  Must-Do
-                </button>
-              )}
-              {reworkCount > 0 && <span className="font-mono text-[11px] bg-amber-50 text-amber-600 border border-amber-200 px-2 py-0.5 rounded-full">Rework ×{reworkCount}</span>}
               {parentProject && (
             <span className="text-xs text-ink-400">
               ↳ {parentProject.name}
@@ -172,14 +155,7 @@ export function FeatureDrawer({ featureId, onClose, scrollToRice }: Props) {
           {/* Effort */}
           <div>
             <p className="text-[10px] uppercase tracking-wider font-semibold text-ink-500 mb-1">Dev. Effort</p>
-            <div className="flex items-center gap-1">
-              {EFFORT_SIZES.map(s => (
-                <button key={s} onClick={() => editMode && updateFeatureV2(feature.id, { effortEstimate: feature.effortEstimate === s ? undefined : s })}
-                  className={`font-mono text-xs px-2.5 py-1 rounded-md border transition-colors ${feature.effortEstimate === s ? 'bg-ink-900 text-white border-ink-900' : 'border-surface-300 text-ink-600 hover:border-ink-400'} ${!editMode ? 'cursor-default' : ''}`}>
-                  {s}
-                </button>
-              ))}
-            </div>
+            <div className="flex items-center gap-1">            </div>
           </div>
 
           {/* Phase D: Two-level parent selector (Project → Module) */}
@@ -213,27 +189,6 @@ export function FeatureDrawer({ featureId, onClose, scrollToRice }: Props) {
               </div>
             </div>
           )}
-
-          {/* Phase B: Must-Do action */}
-          {editMode && (
-            <button onClick={() => setMustDoOpen(true)}
-              className={`text-xs flex items-center gap-1.5 px-2.5 py-1 rounded-lg border transition-colors w-fit ${
-                feature.mustDo
-                  ? 'bg-brick-50 border-brick-300 text-brick-600 hover:bg-brick-100'
-                  : 'border-surface-200 text-ink-500 hover:border-surface-300 hover:bg-surface-50'
-              }`}>
-              <AlertTriangle size={11} />
-              {feature.mustDo ? 'Manage Must-Do tag' : 'Mark as Must-Do'}
-            </button>
-          )}
-
-          {/* Scoring editor — adapts to active framework */}
-          <div ref={riceRef}>
-            {framework === 'wsjf'
-              ? <WsjfEditor featureId={feature.id} kind="feature" mustDoReason={feature.mustDo?.reason} />
-              : <RiceEditor featureId={feature.id} kind="feature" mustDoReason={feature.mustDo?.reason} />
-            }
-          </div>
 
           {/* Item 6: Activity Log */}
           <ActivityLog
@@ -299,16 +254,6 @@ export function FeatureDrawer({ featureId, onClose, scrollToRice }: Props) {
       <Confirm open={discardConfirm} title="Discard changes?" message="You have unsaved edits. Discard them and close?"
         confirmLabel="Discard" danger
         onConfirm={() => { setDiscardConfirm(false); onClose() }}
-        onClose={() => setDiscardConfirm(false)} />
-
-      <MustDoModal
-        open={mustDoOpen}
-        itemId={feature.id}
-        kind="feature"
-        itemName={feature.name}
-        existingReason={feature.mustDo?.reason ?? null}
-        onClose={() => setMustDoOpen(false)}
-      />
-    </>
+        onClose={() => setDiscardConfirm(false)} />    </>
   )
 }

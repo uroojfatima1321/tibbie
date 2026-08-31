@@ -4,9 +4,6 @@ import type { ProjectV2, FeatureV2, Member } from '../../types'
 import { StatusPill, statusBorderColor } from './StatusPill'
 import { ReadinessStrip } from './ReadinessStrip'
 import { Avatar } from '../members/Avatar'
-import { ValueDots } from './ValueDots'
-import { InfoTip } from './InfoTip'
-import { DepartmentChips } from './DepartmentChips'
 import { useApp } from '../../store/context'
 import { LIVE_GROUP_STATUSES } from '../../lib/filterV2'
 
@@ -15,16 +12,13 @@ const TERMINAL_STATUSES = ['shipped', 'killed']
 interface Props {
   project: ProjectV2
   index: number
-  rank: number | null
-  totalScored: number
   features: FeatureV2[]
   members: Member[]
-  topRiceScore: number | null
   onOpen: () => void
   onKebab: (e: React.MouseEvent) => void
 }
 
-export function ProjectCard({ project, index, rank, totalScored, features, members, topRiceScore, onOpen, onKebab }: Props) {
+export function ProjectCard({ project, index, features, members, onOpen, onKebab }: Props) {
   const { editMode, updateProjectV2, modulesV2 } = useApp()
   const owners = useMemo(
     () => members.filter(m => project.ownerIds.includes(m.id)),
@@ -69,17 +63,6 @@ export function ProjectCard({ project, index, rank, totalScored, features, membe
       {/* Header row */}
       <div className="flex items-start gap-2 px-4 pt-4 pb-2">
         <div className="flex items-center gap-1.5 mt-0.5 shrink-0">
-          {/* Phase B: Must-Do badge replaces rank badge */}
-          {project.mustDo ? (
-            <span className="font-sans text-[10px] font-semibold bg-brick-600 text-white px-2 py-0.5 rounded-full leading-none"
-              title={`Must-Do: ${project.mustDo.reason}`}>
-              Must-Do
-            </span>
-          ) : rank !== null ? (
-            <span className="font-mono text-[10px] font-medium bg-rust-500 text-white px-1.5 py-0.5 rounded-full leading-none">
-              #{rank}<span className="opacity-60"> /{totalScored}</span>
-            </span>
-          ) : null}
           <span className="font-mono text-xs text-ink-400">◆ {num}</span>
         </div>
         <div className="flex-1 min-w-0">
@@ -120,7 +103,6 @@ export function ProjectCard({ project, index, rank, totalScored, features, membe
           Replaces the track dot-strip that was dropped in Phase B/C card rewrites. */}
       {project.tracks && project.tracks.length > 0 && (
         <div className="px-4 pb-2">
-          <DepartmentChips tracks={project.tracks} />
         </div>
       )}
 
@@ -157,12 +139,6 @@ export function ProjectCard({ project, index, rank, totalScored, features, membe
             {inFlightCount} in flight
           </span>
         )}
-        {topRiceScore !== null && (
-          <span className="flex items-center gap-1 font-mono">
-            Top RICE {topRiceScore.toFixed(1)}
-            <InfoTip content="Highest RICE score among this project's features" side="bottom" />
-          </span>
-        )}
       </div>
 
       {/* Meta line 2: next milestone */}
@@ -175,7 +151,7 @@ export function ProjectCard({ project, index, rank, totalScored, features, membe
         </div>
       )}
 
-      {/* Footer: owners · strip · value dots · effort · quarter */}
+      {/* Footer: owners · strip · quarter */}
       <div className="px-4 py-3 mt-1 border-t border-surface-100 flex items-center gap-2 flex-wrap">
         <ReadinessStrip project={project} />
         {owners.length > 0 && (
@@ -185,8 +161,6 @@ export function ProjectCard({ project, index, rank, totalScored, features, membe
           </div>
         )}
         <div className="flex-1" />
-        <ValueDots value={project.valueRating} editable={editMode} onSet={v => updateProjectV2(project.id, { valueRating: v })} />
-        {project.effortEstimate && <span className="font-mono text-[11px] text-ink-400">{project.effortEstimate}</span>}
         {project.targetQuarter && <span className="font-mono text-[11px] text-ink-500 font-medium">{project.targetQuarter}</span>}
       </div>
     </article>

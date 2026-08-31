@@ -14,8 +14,6 @@ const TERMINAL_STATUSES = ['shipped', 'killed'] as const
 
 interface Props {
   module_: ModuleV2
-  rank: number | null
-  totalScored: number
   childFeatures: FeatureV2[]
   members: Member[]
   parentProject: ProjectV2 | null   // Item 2: needed for inherited portfolio label
@@ -23,7 +21,7 @@ interface Props {
   onKebab: (e: React.MouseEvent) => void
 }
 
-export function ModuleCard({ module_, rank, totalScored, childFeatures, members, parentProject, onOpen, onKebab }: Props) {
+export function ModuleCard({ module_, childFeatures, members, parentProject, onOpen, onKebab }: Props) {
   const owners = members.filter(m => module_.ownerIds.includes(m.id))
 
   const inFlightCount = useMemo(() =>
@@ -42,18 +40,7 @@ export function ModuleCard({ module_, rank, totalScored, childFeatures, members,
     >
       {/* Header */}
       <div className="flex items-start gap-2 px-4 pt-4 pb-2">
-        <div className="flex items-center gap-1.5 mt-0.5 shrink-0">
-          {module_.mustDo ? (
-            <span className="font-sans text-[10px] font-semibold bg-brick-600 text-white px-2 py-0.5 rounded-full"
-              title={`Must-Do: ${module_.mustDo.reason}`}>
-              Must-Do
-            </span>
-          ) : rank !== null ? (
-            <span className="font-mono text-[10px] font-medium bg-rust-500 text-white px-1.5 py-0.5 rounded-full">
-              #{rank}<span className="opacity-60"> /{totalScored}</span>
-            </span>
-          ) : null}
-          <span className="font-mono text-[10px] text-ink-400">⬡ M</span>
+        <div className="flex items-center gap-1.5 mt-0.5 shrink-0">          <span className="font-mono text-[10px] text-ink-400">⬡ M</span>
         </div>
         <div className="flex-1 min-w-0">
           <span className="font-sans font-semibold text-[15px] text-ink-900 leading-snug block truncate">{module_.name}</span>
@@ -103,13 +90,7 @@ export function ModuleCard({ module_, rank, totalScored, childFeatures, members,
       )}
 
       {/* Meta row */}
-      <div className="px-4 pb-4 mt-auto flex items-center gap-3 flex-wrap">
-        {module_.effortEstimate && (
-          <span className="font-mono text-[10px] text-ink-400 bg-surface-100 px-1.5 py-0.5 rounded">
-            {module_.effortEstimate}
-          </span>
-        )}
-        {module_.targetQuarter && (
+      <div className="px-4 pb-4 mt-auto flex items-center gap-3 flex-wrap">        {module_.targetQuarter && (
           <span className="font-mono text-[10px] text-ink-400">{module_.targetQuarter}</span>
         )}
         {inFlightCount > 0 && (

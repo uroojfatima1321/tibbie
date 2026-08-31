@@ -40,18 +40,8 @@ export function migrate(data: TibbieData | undefined): TibbieData | undefined {
     }
   }
 
-  // ── CR-1.1 compat: rice: null backfill ───────────────────────────────────
-  d.projectsV2 = (d.projectsV2 as any[]).map((p: any) => 'rice' in p ? p : { ...p, rice: null })
-  d.featuresV2 = (d.featuresV2 as any[]).map((f: any) => 'rice' in f ? f : { ...f, rice: null })
-
   // ── P-3 compat: itemType backfill ────────────────────────────────────────
   d.featuresV2 = (d.featuresV2 as any[]).map((f: any) => 'itemType' in f ? f : { ...f, itemType: 'feature' })
-
-  // ── Phase C: wsjf backfill + workspaceSettings ───────────────────────────
-  d.projectsV2 = (d.projectsV2 as any[]).map((p: any) => 'wsjf' in p ? p : { ...p, wsjf: null })
-  d.featuresV2 = (d.featuresV2 as any[]).map((f: any) => 'wsjf' in f ? f : { ...f, wsjf: null })
-  if (!d.workspaceSettings)            d.workspaceSettings = { framework: 'rice' }
-  if (!d.workspaceSettings.framework)  d.workspaceSettings.framework = 'rice'
 
   // ── Phase D: moduleId backfill + modulesV2 ───────────────────────────────
   d.featuresV2 = (d.featuresV2 as any[]).map((f: any) => 'moduleId' in f ? f : { ...f, moduleId: null })
@@ -147,5 +137,54 @@ export function migrate(data: TibbieData | undefined): TibbieData | undefined {
     d.schemaVersion = 3
   }
 
+  // ── schemaVersion 4: Batch A — prune scoring fields (Batch A, Aug 2026) ───
+  // Pure subtraction. Explicit allow-list of keys to remove.
+  // Idempotent: fields simply won't exist on second run. No-op if already clean.
+  // workspaceSettings.framework key removed; container preserved.
+  // Owner MUST export backup JSON before deploying this build.
+  if ((d.schemaVersion ?? 0) < 4) {
+    const PRUNE_ENTITY_KEYS = ['rice', 'wsjf', 'mustDo', 'valueRating', 'effortEstimate']
+
+    let pruneCount = 0
+
+    function pruneEntity(entity: any): any {
+      if (!entity || typeof entity !== 'object') return entity
+      let changed = false
+      const pruned = { ...entity }
+      for (const key of PRUNE_ENTITY_KEYS) {
+        if (key in pruned) {
+          delete pruned[key]
+          changed = true
+          pruneCount++
+        }
+      }
+      return changed ? pruned : entity
+    }
+
+    d.projectsV2 = (d.projectsV2 as any[]).map(pruneEntity)
+    d.featuresV2 = (d.featuresV2 as any[]).map(pruneEntity)
+    d.modulesV2  = (d.modulesV2  as any[]).map(pruneEntity)
+
+    // Remove framework key from workspaceSettings container (not the container itself)
+    if (d.workspaceSettings && typeof d.workspaceSettings === 'object') {
+      const ws = { ...(d.workspaceSettings as any) }
+      if ('framework' in ws) {
+        delete ws.framework
+        pruneCount++
+        d.workspaceSettings = ws
+      }
+    }
+
+    // Expose preflight count for in-app diagnostics overlay (not console)
+    _v4PruneCount = pruneCount
+
+    d.schemaVersion = 4
+  }
+
   return d as TibbieData
 }
+
+// ── Batch A: preflight count exposed for diagnostics overlay ─────────────────
+// Read by Nav.tsx diagnostics panel. Reset on hot-reload; persists for session.
+let _v4PruneCount = 0
+export function getV4PruneCount(): number { return _v4PruneCount }

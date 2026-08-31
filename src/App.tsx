@@ -4,7 +4,6 @@ import { useApp } from './store/context'
 import { Nav, type TopView } from './components/shell/Nav'
 import { CleanupModal } from './components/v2/CleanupModal'
 import { BackupModal } from './components/v2/BackupModal'
-import { SettingsPanel } from './components/v2/SettingsPanel'
 import { OfflineBanner } from './components/shell/OfflineBanner'
 import { TaskDetailPanel } from './components/tasks/TaskDetailPanel'
 import { ProjectForm } from './components/projects/ProjectForm'
@@ -21,7 +20,6 @@ import { Workspace, type WorkspaceHandle } from './components/workspace/Workspac
 import { RoadmapView } from './components/v2/RoadmapView'
 import { ArchiveView } from './components/v2/ArchiveView'
 import { type V2FilterState, EMPTY_FILTER, filterToParams, paramsToFilter } from './lib/filterV2'
-import { PrioritizeView } from './components/v2/PrioritizeView'
 import { ProjectDrawer } from './components/v2/ProjectDrawer'
 import { FeatureDrawer } from './components/v2/FeatureDrawer'
 import { ModuleDrawer } from './components/v2/ModuleDrawer'
@@ -70,7 +68,6 @@ export default function App() {
   const [quickAddOpen, setQuickAddOpen] = useState(false)
   const [cleanupOpen, setCleanupOpen] = useState(false)
   const [backupOpen, setBackupOpen] = useState(false)
-  const [settingsOpen, setSettingsOpen] = useState(false)
   const [openProjectId, setOpenProjectId] = useState<string | null>(null)
   const [openFeatureId, setOpenFeatureId] = useState<string | null>(null)
   const [openModuleId, setOpenModuleId]   = useState<string | null>(null)
@@ -178,7 +175,6 @@ export default function App() {
         onOpenBackup={() => setBackupOpen(true)}
         onOpenMembers={() => setMembersOpen(true)}
         onOpenHolidays={() => setHolidaysOpen(true)}
-        onOpenSettings={() => setSettingsOpen(true)}
       />
 
       {/* My tasks banner (V1 Timeline only) */}
@@ -203,11 +199,6 @@ export default function App() {
           filter={v2Filter}
           onFilterChange={setV2Filter}
         />
-      )}
-
-      {topView === 'prioritize' && (
-        <PrioritizeView onOpenFeature={openFeature} onOpenProject={id => setOpenProjectId(id)}
-          filter={v2Filter} onFilterChange={setV2Filter} />
       )}
 
       {topView === 'timeline' && (
@@ -291,7 +282,7 @@ export default function App() {
       {/* Mobile menu */}
       <Modal open={mobileMenuOpen} onClose={() => setMobileMenuOpen(false)} title="Menu" size="sm">
         <div className="p-5 flex flex-col gap-1">
-          {(['roadmap','prioritize','timeline','archive'] as TopView[]).map(v => (
+          {(['roadmap','timeline','archive'] as TopView[]).map(v => (
             <button key={v} onClick={() => { setTopView(v); setMobileMenuOpen(false) }}
               className={`flex items-center gap-3 px-3 py-3 rounded-lg text-sm text-left ${topView === v ? 'bg-ink-900 text-white' : 'hover:bg-surface-100 text-ink-900'}`}>
               {v.charAt(0).toUpperCase() + v.slice(1)}
@@ -314,7 +305,6 @@ export default function App() {
       {/* Shortcuts modal */}
       <CleanupModal open={cleanupOpen} onClose={() => setCleanupOpen(false)} />
       <BackupModal open={backupOpen} onClose={() => setBackupOpen(false)} />
-      <SettingsPanel open={settingsOpen} onClose={() => setSettingsOpen(false)} />
 
       <Modal open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} title="Keyboard shortcuts" size="sm">
         <div className="p-5 space-y-2 text-sm">

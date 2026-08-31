@@ -123,8 +123,8 @@ export interface TibbieData {
   userPresets?: { name: string; filter: Record<string, unknown> }[]
   deletionLog?: DeletionLogEntry[]   // CR-2.3: permanent deletion audit trail
   _v1ProjectsBackup?: Project[]      // schemaVersion 3: migration safety net, no UI
-  // Phase C: workspace-level settings (scoring framework etc.)
-  workspaceSettings?: { framework: 'rice' | 'wsjf' }
+  // Workspace-level settings container — framework key removed in schemaVersion 4
+  workspaceSettings?: Record<string, unknown>
   // Phase D: module hierarchy
   modulesV2?: ModuleV2[]
 }
@@ -183,7 +183,7 @@ export type FeatureStatus =
   | 'on_hold'
   | 'killed'
 
-export type EffortSize = 'S' | 'M' | 'L' | 'XL'
+
 
 export type TrackKind = 'marketing' | 'sales' | 'support' | 'implementation'
 export type MarketingTrackStatus      = 'not_started' | 'positioning' | 'collateral_ready' | 'launched'
@@ -191,32 +191,9 @@ export type SalesTrackStatus          = 'not_started' | 'deck_pricing_ready' | '
 export type SupportTrackStatus        = 'not_started' | 'docs_written' | 'team_trained' | 'live'
 export type ImplementationTrackStatus = 'not_started' | 'deployment_plan' | 'pilot_client' | 'rolled_out'
 
-export interface RiceScore {
-  reach: 1 | 2 | 3 | 4 | 5   // 1=Very few · 2=Some · 3=Many · 4=Most · 5=Nearly all users
-  impact: 0.25 | 0.5 | 1 | 2 | 3
-  confidence: number       // 0–100
-  effort: number           // person-weeks > 0
-  scoredAt: string         // ISO date
-  scoredBy?: string        // memberId
-}
 
-// ── Phase C: WSJF scoring framework ─────────────────────────────────────────
-export interface WsjfScore {
-  businessValue: number      // 1–10: how much money/strategic value
-  timeCriticality: number    // 1–10: cost of delay / urgency
-  riskOpportunity: number    // 1–10: risk reduction / opportunity enablement
-  jobSize: number            // 1–10: relative effort (bigger = larger)
-  scoredAt: string
-  scoredBy?: string
-  // Derived: (businessValue + timeCriticality + riskOpportunity) / jobSize
-}
 
 // ── Phase B: Must-Do tag ──────────────────────────────────────────────────────
-export interface MustDoTag {
-  reason: string
-  at: string          // ISO timestamp when tag was applied
-  byMemberId?: string
-}
 
 export interface StatusLogEntry {
   id: string
@@ -265,7 +242,6 @@ export interface ProjectV2 {
   targetQuarter?: string
   startDate?: string
   targetShipDate?: string
-  effortEstimate?: EffortSize
   tags: string[]
   milestones: Milestone[]
   featureIds: string[]
@@ -276,10 +252,6 @@ export interface ProjectV2 {
   retroNotes?: string
   archived: boolean
   order: number             // manual sort within portfolio section
-  rice: RiceScore | null          // CR-1.1 — joins unified RICE rank pool
-  wsjf: WsjfScore | null         // Phase C — WSJF framework alternative to RICE
-  valueRating?: 1 | 2 | 3 | 4 | 5  // CR-1.4 — Business Value (independent of RICE)
-  mustDo?: MustDoTag             // Phase B — Must-Do: excluded from rank pool, ships regardless
   clientTimeline?: boolean       // Phase B — Timeline has been shared with client (caution signal)
   // ── Unification fields (schemaVersion 3) ──────────────────────────────────
   color?: string        // Gantt bar color — migrated from V1 Project
@@ -300,17 +272,12 @@ export interface FeatureV2 {
   holdReason?: string
   killReason?: string
   itemType?: 'feature' | 'improvement'   // default 'feature' — backfilled by compat patch
-  rice: RiceScore | null
-  wsjf: WsjfScore | null         // Phase C — WSJF framework alternative to RICE
-  valueRating?: 1 | 2 | 3 | 4 | 5  // CR-1.4
-  effortEstimate?: EffortSize
   ownerIds: string[]
   tags: string[]
   statusLog: StatusLogEntry[]
   decisionLog: DecisionEntry[]
   activityLog?: ActivityEntry[]   // Item 6
   archived: boolean
-  mustDo?: MustDoTag             // Phase B — Must-Do: ships regardless of score
   order: number
   moduleId?: string | null       // Phase D: null = directly under project or backlog
   createdAt: string
@@ -350,10 +317,7 @@ export interface ModuleV2 {
   killReason?: string
   reworkFromGate?: 'architecture' | 'code_review' | 'qa'
   ownerIds: string[]
-  mustDo?: MustDoTag
-  rice: RiceScore | null
-  wsjf: WsjfScore | null
-  valueRating?: 1|2|3|4|5
+
   statusLog: StatusLogEntry[]
   decisionLog: DecisionEntry[]
   activityLog?: ActivityEntry[]   // Item 6
@@ -365,7 +329,6 @@ export interface ModuleV2 {
   milestones: Milestone[]       // same shape as ProjectV2
   tracks: DepartmentTrack[]     // department readiness (same shape as ProjectV2)
   clientTimeline?: boolean      // caution signal, same as ProjectV2
-  effortEstimate?: EffortSize   // for card anatomy
   targetQuarter?: string        // for card anatomy
 }
 

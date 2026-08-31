@@ -10,10 +10,7 @@ import type { ModuleV2, FeatureStatus } from '../../types'
 import { useApp } from '../../store/context'
 import { useDraftField } from '../../lib/useDraftField'
 import { ModalDialog } from '../ui/ModalDialog'
-import { RiceEditor } from './RiceEditor'
-import { WsjfEditor } from './WsjfEditor'
 import { PortfolioCombobox } from './PortfolioCombobox'
-import { MustDoModal } from './MustDoModal'
 import { TasksSection } from './TasksSection'
 import { ActivityLog } from './ActivityLog'
 import { StatusPill, ALL_FEATURE_STATUSES, getStatusLabel } from './StatusPill'
@@ -50,9 +47,9 @@ interface Props {
 
 export function ModuleDrawer({ moduleId, onClose, onOpenFeature }: Props) {
   const {
-    modulesV2, featuresV2, projectsV2, rankedItemIds, data,
+    modulesV2, featuresV2, projectsV2, data,
     updateModuleV2, archiveModuleV2, addModuleV2StatusLog, addModuleV2Decision,
-    editMode, framework,
+    editMode,
   } = useApp()
 
   const module_ = useMemo(() => modulesV2.find(m => m.id === moduleId) ?? null, [modulesV2, moduleId])
@@ -79,13 +76,11 @@ export function ModuleDrawer({ moduleId, onClose, onOpenFeature }: Props) {
   const [decisionText, setDecisionText] = useState('')
   const [archiveOpen, setArchiveOpen]   = useState(false)
   const [archivePath, setArchivePath]   = useState<'archive' | 'detach' | null>(null)
-  const [mustDoOpen, setMustDoOpen]     = useState(false)
   const [editName, setEditName]         = useState(false)
   const [nameValue, setNameValue]       = useState('')
 
   if (!module_) return null
 
-  const rank = rankedItemIds.indexOf(module_.id)
   const reworkCount = module_.statusLog.filter(e => e.to === 'rework').length
 
   async function confirmStatusChange() {
@@ -142,18 +137,6 @@ export function ModuleDrawer({ moduleId, onClose, onOpenFeature }: Props) {
                 editMode={editMode}
                 onSelect={s => setPendingStatus(s as FeatureStatus)}
               />
-              {rank >= 0 && !module_.mustDo && (
-                <span className="font-mono text-[11px] bg-rust-500 text-white px-2 py-0.5 rounded-full">#{rank + 1}</span>
-              )}
-              {module_.mustDo && (
-                <button
-                  onClick={() => editMode && setMustDoOpen(true)}
-                  className={`font-sans text-[11px] font-semibold bg-brick-600 text-white px-2 py-0.5 rounded-full ${editMode ? 'hover:bg-brick-700 cursor-pointer' : 'cursor-default'}`}
-                  title={`Must-Do: ${module_.mustDo.reason}`}
-                >
-                  Must-Do
-                </button>
-              )}
               {reworkCount > 0 && (
                 <span className="font-mono text-[11px] bg-amber-50 text-amber-600 border border-amber-200 px-2 py-0.5 rounded-full">
                   Rework ×{reworkCount}
@@ -231,25 +214,6 @@ export function ModuleDrawer({ moduleId, onClose, onOpenFeature }: Props) {
             </div>
           ) : module_.oneLiner ? <p className="text-sm text-ink-600">{module_.oneLiner}</p> : null}
 
-          {/* Must-Do action */}
-          {editMode && (
-            <button onClick={() => setMustDoOpen(true)}
-              className={`text-xs flex items-center gap-1.5 px-2.5 py-1 rounded-lg border transition-colors w-fit ${
-                module_.mustDo
-                  ? 'bg-brick-50 border-brick-300 text-brick-600 hover:bg-brick-100'
-                  : 'border-surface-200 text-ink-500 hover:border-surface-300 hover:bg-surface-50'
-              }`}>
-              <AlertTriangle size={11} />
-              {module_.mustDo ? 'Manage Must-Do tag' : 'Mark as Must-Do'}
-            </button>
-          )}
-
-          {/* Scoring editor — Fix 1 R2-C1: modules now fully scoreable (no as-any, proper save path) */}
-          {framework === 'wsjf'
-            ? <WsjfEditor moduleId={module_.id} kind="module" mustDoReason={module_.mustDo?.reason} />
-            : <RiceEditor  moduleId={module_.id} kind="module" mustDoReason={module_.mustDo?.reason} />
-          }
-
           {/* Features in this module */}
           <div>
             <p className="text-[10px] uppercase tracking-wider font-semibold text-ink-500 mb-2">
@@ -259,19 +223,15 @@ export function ModuleDrawer({ moduleId, onClose, onOpenFeature }: Props) {
               ? <p className="text-xs text-ink-400">No features assigned to this module yet.</p>
               : (
                 <div className="space-y-0.5">
-                  {moduleFeatures.map(f => {
-                    const r = rankedItemIds.indexOf(f.id)
-                    return (
-                      <button key={f.id}
-                        onClick={() => onOpenFeature?.(f.id)}
-                        className="flex items-center gap-2 py-1.5 px-2 rounded-lg hover:bg-surface-50 text-sm w-full text-left"
-                      >
-                        {r >= 0 && <span className="font-mono text-[10px] bg-rust-500 text-white px-1.5 py-0.5 rounded-full">#{r + 1}</span>}
-                        <span className="flex-1 text-ink-800 truncate">{f.name}</span>
-                        <StatusPill status={f.status} kind="feature" className="!text-[10px]" />
-                      </button>
-                    )
-                  })}
+                  {moduleFeatures.map(f => (
+                    <button key={f.id}
+                      onClick={() => onOpenFeature?.(f.id)}
+                      className="flex items-center gap-2 py-1.5 px-2 rounded-lg hover:bg-surface-50 text-sm w-full text-left"
+                    >
+                      <span className="flex-1 text-ink-800 truncate">{f.name}</span>
+                      <StatusPill status={f.status} kind="feature" className="!text-[10px]" />
+                    </button>
+                  ))}
                 </div>
               )}
           </div>
@@ -388,15 +348,6 @@ export function ModuleDrawer({ moduleId, onClose, onOpenFeature }: Props) {
           setArchivePath(null); setArchiveOpen(false); onClose()
         }}
         onClose={() => { setArchivePath(null); setArchiveOpen(false) }}
-      />
-
-      <MustDoModal
-        open={mustDoOpen}
-        itemId={module_.id}
-        kind="module"
-        itemName={module_.name}
-        existingReason={module_.mustDo?.reason ?? null}
-        onClose={() => setMustDoOpen(false)}
       />
     </>
   )

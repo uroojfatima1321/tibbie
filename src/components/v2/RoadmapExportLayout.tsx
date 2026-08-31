@@ -1,10 +1,4 @@
-import { isValidRice, safeRiceScore } from '../../lib/filterV2'
 import type { ProjectV2, FeatureV2, Member } from '../../types'
-import type { RiceScore } from '../../types'
-
-function riceScore(rice: RiceScore) {
-  return (rice.reach * rice.impact * (rice.confidence / 100)) / rice.effort
-}
 
 const STATUS_EXPORT_COLORS: Record<string, string> = {
   intake: '#E8E7E4', requirement_gathering: '#3A6B8A', requirement_analysis: '#2D5470',
@@ -82,8 +76,6 @@ export function RoadmapExportLayout({ portfolios, features, members, quarter }: 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16 }}>
             {portfolio.projects.map((project, i) => {
               const pFeatures = featsByProject[project.id] || []
-              const scoredFs = pFeatures.filter(f => isValidRice(f.rice))
-              const topRice = scoredFs.length ? Math.max(...scoredFs.map(f => safeRiceScore(f.rice) ?? 0)) : null
               const nextMs = project.milestones
                 .filter(m => m.status === 'upcoming' && m.date >= new Date().toISOString().slice(0, 10))
                 .sort((a, b) => a.date.localeCompare(b.date))[0]
@@ -131,18 +123,16 @@ export function RoadmapExportLayout({ portfolios, features, members, quarter }: 
                   {/* Meta */}
                   <div style={{ fontSize: 11, color: '#8B8680', display: 'flex', flexDirection: 'column', gap: 4 }}>
                     {pFeatures.length > 0 && (
-                      <span>◇ {pFeatures.length} feature{pFeatures.length !== 1 ? 's' : ''}{topRice !== null ? ` · Top RICE ${topRice.toFixed(1)}` : ''}</span>
+                      <span>◇ {pFeatures.length} feature{pFeatures.length !== 1 ? 's' : ''}</span>
                     )}
                     {nextMs && (
                       <span>▸ Next: {nextMs.name} — {new Date(nextMs.date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}</span>
                     )}
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 4 }}>
-                      <span style={{ fontFamily: 'JetBrains Mono, monospace' }}>
-                        {project.effortEstimate && `${project.effortEstimate}`}
-                        {project.effortEstimate && project.targetQuarter && ' · '}
-                        {project.targetQuarter && project.targetQuarter}
-                      </span>
-                    </div>
+                    {project.targetQuarter && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 4 }}>
+                        <span style={{ fontFamily: 'JetBrains Mono, monospace' }}>{project.targetQuarter}</span>
+                      </div>
+                    )}
                   </div>
                 </div>
               )

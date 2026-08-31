@@ -11,9 +11,8 @@
  */
 export {}
 import { migrate } from './src/lib/migrate'
-import { buildRankedIds } from './src/lib/rank'
 import { validateConsistency, selfHeal } from './src/lib/consistency'
-import { deriveSections } from './src/lib/prioritizeSections'
+import { LIVE_GROUP_STATUSES } from './src/lib/filterV2'
   // make this file a module so top-level await works
 
 // ─── Minimal types (inlined — no React imports) ───────────────────────────────
@@ -70,14 +69,13 @@ const realShape: TibbieData = {
     id: 'vp-prj-1', kind: 'project', name: 'Intellicon', oneLiner: 'AI', portfolio: 'Core',
     status: 'development', ownerIds: ['mem-1'], tags: [], milestones: [], featureIds: ['ftr-1'],
     tracks: [], statusLog: [], decisionLog: [], archived: false, order: 0,
-    rice: { reach: 5, impact: 2, confidence: 80, effort: 4, scoredAt: '2025-06-01' },
     createdAt: '2025-01-01T00:00:00Z', updatedAt: '2025-01-01T00:00:00Z',
   }],
   featuresV2: [{
     id: 'ftr-1', kind: 'feature', name: 'Stats Dashboard', oneLiner: 'Charts',
     projectId: 'vp-prj-1', status: 'in_dev', itemType: 'feature',
     ownerIds: [], tags: [], statusLog: [], decisionLog: [],
-    archived: false, order: 0, rice: null,
+    archived: false, order: 0,
     createdAt: '2025-01-01T00:00:00Z', updatedAt: '2025-01-01T00:00:00Z',
   }],
   userPresets: [], deletionLog: [],
@@ -85,21 +83,7 @@ const realShape: TibbieData = {
 
 // ─── Simulate migrate() guards ─────────────────────────────────────────────────
 
-function simulateMigrate(raw: TibbieData): TibbieData {
-  const d: any = { ...raw }
-  if (!Array.isArray(d.holidays))      d.holidays      = []
-  if (!Array.isArray(d.updates))       d.updates       = []
-  if (!Array.isArray(d.phaseTemplates))d.phaseTemplates= []
-  if (!Array.isArray(d.projectPhases)) d.projectPhases = []
-  if (!Array.isArray(d.projectsV2))    d.projectsV2    = []
-  if (!Array.isArray(d.featuresV2))    d.featuresV2    = []
-  if (!Array.isArray(d.userPresets))   d.userPresets   = []
-  if (!Array.isArray(d.deletionLog))   d.deletionLog   = []
-  d.projectsV2 = (d.projectsV2 as any[]).map((p: any) => 'rice'     in p ? p : { ...p, rice: null })
-  d.featuresV2 = (d.featuresV2 as any[]).map((f: any) => 'rice'     in f ? f : { ...f, rice: null })
-  d.featuresV2 = (d.featuresV2 as any[]).map((f: any) => 'itemType' in f ? f : { ...f, itemType: 'feature' })
-  return d as TibbieData
-}
+// simulateMigrate deleted — section 1 now imports real migrate()
 
 // ─── Simulate Phase A store ────────────────────────────────────────────────────
 
@@ -154,15 +138,16 @@ function simRefetch(store: SimStore, serverVersion: number): void {
 section('1. Three data shapes — migrate() guard assertions')
 
 for (const [name, input] of [['empty', emptyShape], ['null-heavy', nullHeavyShape], ['real', realShape]] as const) {
-  const d = simulateMigrate(input)
+  const d = migrate(input as any)!   // real migrate() — cast needed as shapes are partial fixtures
   assert(Array.isArray(d.holidays),      `[${name}] holidays is array`)
   assert(Array.isArray(d.updates),       `[${name}] updates is array`)
   assert(Array.isArray(d.phaseTemplates),`[${name}] phaseTemplates is array`)
   assert(Array.isArray(d.projectPhases), `[${name}] projectPhases is array`)
   assert(Array.isArray(d.projectsV2),    `[${name}] projectsV2 is array`)
   assert(Array.isArray(d.featuresV2),    `[${name}] featuresV2 is array`)
-  assert((d.projectsV2 as any[]).every((p: any) => 'rice'     in p), `[${name}] all projectsV2 have rice field`)
-  assert((d.featuresV2 as any[]).every((f: any) => 'rice'     in f), `[${name}] all featuresV2 have rice field`)
+  // Batch A: rice absent from all entities after migration
+  assert((d.projectsV2 as any[]).every((p: any) => !('rice' in p)), `[${name}] rice absent from all projectsV2`)
+  assert((d.featuresV2 as any[]).every((f: any) => !('rice' in f)), `[${name}] rice absent from all featuresV2`)
   assert((d.featuresV2 as any[]).every((f: any) => 'itemType' in f), `[${name}] all featuresV2 have itemType field`)
 }
 
@@ -384,79 +369,6 @@ section('9. Seed/loadDemoData/importJSON — immediate save, workspace clean')
   assert(store.stagedCount  === 0,     'ImmediateSave: staged count = 0 after seed')
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// PHASE B ASSERTIONS
-// ─────────────────────────────────────────────────────────────────────────────
-
-// ─── Phase B helpers ──────────────────────────────────────────────────────────
-interface MustDoTag { reason: string; at: string; byMemberId?: string }
-interface WsjfScoreLocal {
-  businessValue: number; timeCriticality: number; riskOpportunity: number; jobSize: number
-  scoredAt: string
-}
-
-function simIsValidWsjf(w: WsjfScoreLocal | null | undefined): w is WsjfScoreLocal {
-  if (!w) return false
-  return w.businessValue >= 1 && w.timeCriticality >= 1 && w.riskOpportunity >= 1 && w.jobSize >= 1 &&
-         w.businessValue <= 10 && w.timeCriticality <= 10 && w.riskOpportunity <= 10 && w.jobSize <= 10
-}
-function simWsjfScore(w: WsjfScoreLocal): number {
-  return (w.businessValue + w.timeCriticality + w.riskOpportunity) / w.jobSize
-}
-
-const LIVE_STATUSES_B = ['beta_production', 'production', 'production_monitoring', 'mvp_live']
-
-interface SimItemB {
-  id: string; kind: 'project' | 'feature' | 'module'; status: string
-  rice: { reach: number; impact: number; confidence: number; effort: number; scoredAt: string } | null
-  wsjf: WsjfScoreLocal | null
-  mustDo?: MustDoTag
-}
-
-function simBuildRankedIds(items: SimItemB[], framework: 'rice' | 'wsjf'): string[] {
-  const eligible = items.filter(i => {
-    if (i.mustDo) return false
-    if (i.kind === 'project' && LIVE_STATUSES_B.includes(i.status)) return false
-    return true
-  })
-  if (framework === 'wsjf') {
-    return eligible
-      .filter(i => simIsValidWsjf(i.wsjf))
-      .sort((a, b) => simWsjfScore(b.wsjf!) - simWsjfScore(a.wsjf!))
-      .map(i => i.id)
-  }
-  return eligible
-    .filter(i => i.rice !== null)
-    .sort((a, b) => {
-      const sa = (a.rice!.reach * a.rice!.impact * (a.rice!.confidence / 100)) / a.rice!.effort
-      const sb = (b.rice!.reach * b.rice!.impact * (b.rice!.confidence / 100)) / b.rice!.effort
-      return sb - sa
-    })
-    .map(i => i.id)
-}
-
-section('B1. Must-Do — excluded from rank pool, must-do group, reason required')
-
-{
-  const items: SimItemB[] = [
-    { id: 'p1', kind: 'project', status: 'development', rice: { reach: 5, impact: 3, confidence: 80, effort: 4, scoredAt: '2025-01-01' }, wsjf: null },
-    { id: 'f1', kind: 'feature', status: 'in_dev', rice: { reach: 4, impact: 2, confidence: 90, effort: 2, scoredAt: '2025-01-01' }, wsjf: null,
-      mustDo: { reason: 'Regulatory requirement', at: '2025-06-01T00:00:00Z' } },
-    { id: 'f2', kind: 'feature', status: 'intake', rice: { reach: 3, impact: 1, confidence: 70, effort: 1, scoredAt: '2025-01-01' }, wsjf: null },
-  ]
-  const ranked = simBuildRankedIds(items, 'rice')
-  assert(!ranked.includes('f1'), 'B1: Must-Do item excluded from RICE ranked pool')
-  assert(ranked.includes('p1'), 'B1: non-Must-Do item remains in ranked pool')
-  assert(ranked.includes('f2'), 'B1: non-Must-Do item remains in ranked pool (2)')
-
-  // Must-Do validation: reason required
-  let reasonValidationPassed = false
-  function simulateApplyMustDo(reason: string): boolean {
-    return reason.trim().length > 0  // mirrors MustDoModal validation
-  }
-  assert(!simulateApplyMustDo(''), 'B1: Must-Do without reason → blocked')
-  assert(simulateApplyMustDo('Regulatory requirement'), 'B1: Must-Do with reason → allowed')
-}
 
 section('B2. Client Timeline — chip renders only when true')
 
@@ -470,148 +382,6 @@ section('B2. Client Timeline — chip renders only when true')
   assert(!(projectWithoutCT.clientTimeline), 'B2: clientTimeline=false → chip should not render')
   assert(!((projectNoCT as any).clientTimeline), 'B2: clientTimeline absent → chip should not render')
 }
-
-section('B3. Live-group exclusion from rank pool')
-
-{
-  const items: SimItemB[] = [
-    { id: 'live1', kind: 'project', status: 'production', rice: { reach: 5, impact: 3, confidence: 90, effort: 2, scoredAt: '2025-01-01' }, wsjf: null },
-    { id: 'live2', kind: 'project', status: 'beta_production', rice: { reach: 4, impact: 2, confidence: 80, effort: 3, scoredAt: '2025-01-01' }, wsjf: null },
-    { id: 'dev1', kind: 'project', status: 'development', rice: { reach: 3, impact: 1, confidence: 70, effort: 4, scoredAt: '2025-01-01' }, wsjf: null },
-    { id: 'feat1', kind: 'feature', status: 'in_dev', rice: { reach: 4, impact: 2, confidence: 85, effort: 2, scoredAt: '2025-01-01' }, wsjf: null },
-  ]
-
-  const ranked = simBuildRankedIds(items, 'rice')
-  assert(!ranked.includes('live1'), 'B3: Live (production) project excluded from rank pool')
-  assert(!ranked.includes('live2'), 'B3: Live (beta) project excluded from rank pool')
-  assert(ranked.includes('dev1'), 'B3: Dev-group project included in rank pool')
-  assert(ranked.includes('feat1'), 'B3: Feature included in rank pool regardless of status')
-
-  // Score retained in data — check that rice data is NOT cleared
-  assert(items.find(i => i.id === 'live1')!.rice !== null, 'B3: Live project score retained in data')
-
-  // Status change back to dev → re-enters pool
-  const liveItem = items.find(i => i.id === 'live1')!
-  const restoredItem = { ...liveItem, status: 'development' }
-  const rankedAfterRestore = simBuildRankedIds([...items.filter(i => i.id !== 'live1'), restoredItem], 'rice')
-  assert(rankedAfterRestore.includes('live1'), 'B3: Status changed back to Dev → re-enters rank pool with retained score')
-}
-
-section('B4. Must-Do and Live exclusions apply identically under WSJF')
-
-{
-  const wsjfScore: WsjfScoreLocal = { businessValue: 8, timeCriticality: 7, riskOpportunity: 6, jobSize: 3, scoredAt: '2025-01-01' }
-  const items: SimItemB[] = [
-    { id: 'md1', kind: 'feature', status: 'in_dev', rice: null, wsjf: wsjfScore,
-      mustDo: { reason: 'Compliance', at: '2025-06-01T00:00:00Z' } },
-    { id: 'live1', kind: 'project', status: 'production', rice: null, wsjf: wsjfScore },
-    { id: 'normal', kind: 'feature', status: 'in_dev', rice: null, wsjf: wsjfScore },
-  ]
-
-  const ranked = simBuildRankedIds(items, 'wsjf')
-  assert(!ranked.includes('md1'), 'B4/C: Must-Do excluded from WSJF rank pool')
-  assert(!ranked.includes('live1'), 'B4/C: Live project excluded from WSJF rank pool')
-  assert(ranked.includes('normal'), 'B4/C: Normal item included in WSJF rank pool')
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// PHASE C ASSERTIONS
-// ─────────────────────────────────────────────────────────────────────────────
-
-section('C1. WSJF validation bounds (1–10, jobSize ≥ 1)')
-
-{
-  function validateWsjf(bv: number, tc: number, ro: number, js: number): boolean {
-    return bv >= 1 && bv <= 10 && tc >= 1 && tc <= 10 && ro >= 1 && ro <= 10 && js >= 1 && js <= 10
-  }
-
-  assert(!validateWsjf(0, 5, 5, 5), 'C1: businessValue 0 fails validation')
-  assert(!validateWsjf(5, 11, 5, 5), 'C1: timeCriticality 11 fails validation')
-  assert(!validateWsjf(5, 5, 5, 0), 'C1: jobSize 0 fails validation')
-  assert(validateWsjf(1, 1, 1, 1), 'C1: all-1 passes validation')
-  assert(validateWsjf(10, 10, 10, 10), 'C1: all-10 passes validation')
-  assert(validateWsjf(7, 9, 4, 5), 'C1: spec example (7+9+4)/5 passes validation')
-}
-
-section('C2. WSJF score math correct')
-
-{
-  // Spec example: (7 + 9 + 4) ÷ 5 = 4.0
-  const bv=7, tc=9, ro=4, js=5
-  const score = (bv + tc + ro) / js
-  assert(Math.abs(score - 4.0) < 0.001, 'C2: (7+9+4)÷5 = 4.0 ✓')
-
-  // Additional cases
-  assert(Math.abs((10+10+10)/1 - 30.0) < 0.001, 'C2: max numerator ÷ min denominator = 30.0')
-  assert(Math.abs((1+1+1)/10 - 0.3) < 0.001, 'C2: min numerator ÷ max denominator = 0.3')
-  assert(Math.abs((5+5+5)/5 - 3.0) < 0.001, 'C2: balanced = 3.0')
-}
-
-section('C3. Framework switch — RICE data preserved when switching to WSJF, vice versa')
-
-{
-  const riceData = { reach: 5, impact: 3, confidence: 80, effort: 4, scoredAt: '2025-01-01' }
-  const wsjfData: WsjfScoreLocal = { businessValue: 8, timeCriticality: 7, riskOpportunity: 6, jobSize: 3, scoredAt: '2025-06-01' }
-
-  // Item has both rice and wsjf scores
-  const item: SimItemB = { id: 'f1', kind: 'feature', status: 'in_dev', rice: riceData, wsjf: wsjfData }
-
-  // Under RICE: RICE score used for ranking, WSJF data untouched
-  const riceItems = [item]
-  const riceRanked = simBuildRankedIds(riceItems, 'rice')
-  assert(riceRanked.includes('f1'), 'C3: RICE framework → item ranked by RICE score')
-  assert(item.wsjf !== null, 'C3: WSJF data untouched when RICE is active')
-
-  // Under WSJF: WSJF score used for ranking, RICE data untouched
-  const wsjfRanked = simBuildRankedIds(riceItems, 'wsjf')
-  assert(wsjfRanked.includes('f1'), 'C3: WSJF framework → item ranked by WSJF score')
-  assert(item.rice !== null, 'C3: RICE data untouched when WSJF is active')
-
-  // Items unscored in new framework rank as Unscored (not in pool)
-  const riceOnlyItem: SimItemB = { id: 'riceOnly', kind: 'feature', status: 'in_dev', rice: riceData, wsjf: null }
-  const wsjfPoolCheck = simBuildRankedIds([riceOnlyItem], 'wsjf')
-  assert(!wsjfPoolCheck.includes('riceOnly'), 'C3: Item with rice only → Unscored in WSJF rank pool')
-
-  const wsjfOnlyItem: SimItemB = { id: 'wsjfOnly', kind: 'feature', status: 'in_dev', rice: null, wsjf: wsjfData }
-  const ricePoolCheck = simBuildRankedIds([wsjfOnlyItem], 'rice')
-  assert(!ricePoolCheck.includes('wsjfOnly'), 'C3: Item with wsjf only → Unscored in RICE rank pool')
-}
-
-section('C4. WSJF rank ordering correct')
-
-{
-  const items: SimItemB[] = [
-    { id: 'high', kind: 'feature', status: 'in_dev', rice: null,
-      wsjf: { businessValue: 9, timeCriticality: 9, riskOpportunity: 9, jobSize: 1, scoredAt: '2025-01-01' } }, // 27/1=27
-    { id: 'mid', kind: 'feature', status: 'in_dev', rice: null,
-      wsjf: { businessValue: 7, timeCriticality: 9, riskOpportunity: 4, jobSize: 5, scoredAt: '2025-01-01' } }, // 20/5=4.0
-    { id: 'low', kind: 'feature', status: 'in_dev', rice: null,
-      wsjf: { businessValue: 1, timeCriticality: 1, riskOpportunity: 1, jobSize: 10, scoredAt: '2025-01-01' } }, // 3/10=0.3
-  ]
-  const ranked = simBuildRankedIds(items, 'wsjf')
-  assert(ranked[0] === 'high', 'C4: highest WSJF score ranks #1')
-  assert(ranked[1] === 'mid', 'C4: mid WSJF score ranks #2')
-  assert(ranked[2] === 'low', 'C4: lowest WSJF score ranks #3')
-}
-
-section('C5. Migration — workspaceSettings backfill')
-
-{
-  // Simulate migrate() behavior for workspaceSettings
-  function simMigrateWS(raw: Record<string, unknown>): { framework: 'rice' | 'wsjf' } {
-    if (!raw.workspaceSettings) return { framework: 'rice' }
-    const ws = raw.workspaceSettings as any
-    if (!ws.framework) return { framework: 'rice' }
-    return ws as { framework: 'rice' | 'wsjf' }
-  }
-
-  assert(simMigrateWS({}).framework === 'rice', 'C5: absent workspaceSettings → backfill rice')
-  assert(simMigrateWS({ workspaceSettings: {} }).framework === 'rice', 'C5: empty workspaceSettings → backfill rice')
-  assert(simMigrateWS({ workspaceSettings: { framework: 'wsjf' } }).framework === 'wsjf', 'C5: existing wsjf preserved')
-}
-
-// PHASE D ASSERTIONS
-// ─────────────────────────────────────────────────────────────────────────────
 
 section('D1. Migration — moduleId: null backfill + modulesV2 initialization')
 
@@ -696,45 +466,6 @@ section('D2. Module always has valid projectId; feature.moduleId must match its 
   // Invalid: feature with moduleId but mismatched projectId
   const mismatchFeature = [{ id: 'f2', projectId: 'p2', moduleId: 'm1' }]  // m1 belongs to p1
   assert(validateConsistency(projects, modules, mismatchFeature).length > 0, 'D2: feature/module projectId mismatch → error detected')
-}
-
-section('D3. Rank pool — modules compete alongside projects and features')
-
-{
-  // Modules with RICE/WSJF scores enter the rank pool
-  const riceData = { reach: 5, impact: 3, confidence: 80, effort: 4, scoredAt: '2025-01-01' }
-  const wsjfData: WsjfScoreLocal = { businessValue: 8, timeCriticality: 7, riskOpportunity: 6, jobSize: 3, scoredAt: '2025-06-01' }
-
-  const items: SimItemB[] = [
-    { id: 'p1', kind: 'project', status: 'development', rice: { ...riceData, reach: 3, effort: 6 }, wsjf: null },
-    { id: 'm1', kind: 'module',  status: 'in_dev',     rice: { ...riceData, reach: 5, effort: 2 }, wsjf: null },  // higher score
-    { id: 'f1', kind: 'feature', status: 'in_dev',     rice: { ...riceData, reach: 4, effort: 3 }, wsjf: null },
-  ]
-
-  // RICE ranking — module with high score should rank #1
-  const ranked = simBuildRankedIds(items, 'rice')
-  assert(ranked.includes('m1'), 'D3: module enters RICE rank pool')
-  assert(ranked[0] === 'm1', 'D3: highest-scoring module ranks #1')
-  assert(ranked.includes('p1') && ranked.includes('f1'), 'D3: project and feature still in pool')
-
-  // WSJF ranking — modules also enter
-  const wItems: SimItemB[] = [
-    { id: 'p1', kind: 'project', status: 'development', rice: null, wsjf: { ...wsjfData, businessValue: 5 } },
-    { id: 'm1', kind: 'module',  status: 'in_dev',     rice: null, wsjf: { ...wsjfData, businessValue: 10 } },  // highest
-    { id: 'f1', kind: 'feature', status: 'in_dev',     rice: null, wsjf: { ...wsjfData, businessValue: 7 } },
-  ]
-  const wRanked = simBuildRankedIds(wItems, 'wsjf')
-  assert(wRanked[0] === 'm1', 'D3: highest-scoring module ranks #1 in WSJF')
-
-  // Must-Do modules excluded from pool
-  const mustDoItems: SimItemB[] = [
-    { id: 'm2', kind: 'module', status: 'in_dev', rice: riceData, wsjf: null,
-      mustDo: { reason: 'Regulatory', at: '2025-06-01T00:00:00Z' } },
-    { id: 'm3', kind: 'module', status: 'in_dev', rice: riceData, wsjf: null },
-  ]
-  const mustDoRanked = simBuildRankedIds(mustDoItems, 'rice')
-  assert(!mustDoRanked.includes('m2'), 'D3: Must-Do module excluded from rank pool')
-  assert(mustDoRanked.includes('m3'), 'D3: normal module still in pool')
 }
 
 section('D4. Archive module — both paths leave consistent data')
@@ -845,11 +576,12 @@ section('Fix10.A — migrate() real code: three shapes + V1-backup (Fix 4)')
   // Empty shape: all guards run, no crash
   const empty = migrate({ projects: [], members: [], tasks: [], dependencies: [], version: 0 } as any)
   assert(Array.isArray(empty?.modulesV2), 'Fix10.A: migrate(empty) → modulesV2 is array')
-  assert(empty?.workspaceSettings?.framework === 'rice', 'Fix10.A: migrate(empty) → workspaceSettings backfilled')
+  // Batch A: workspaceSettings.framework was removed by v4 migration
+  assert(!(empty?.workspaceSettings as any)?.framework, 'Fix10.A: migrate(empty) → workspaceSettings.framework absent after v4')
 
-  // Null-heavy shape
+  // Null-heavy shape — v4 migration now runs too so schemaVersion = 4
   const nullHeavy = migrate({ projects: [], members: [], tasks: [], dependencies: [], version: 5 } as any)
-  assert(nullHeavy?.schemaVersion === 3, 'Fix10.A: migrate(nullHeavy) → schemaVersion = 3')
+  assert(nullHeavy?.schemaVersion === 4, 'Fix10.A: migrate(nullHeavy) → schemaVersion = 4 (Batch A)')
   assert(Array.isArray(nullHeavy?.modulesV2), 'Fix10.A: migrate(nullHeavy) → modulesV2 array')
 
   // Fix 4 (R1-C2): V1 projects backup is populated before schemaVersion 3 sets d.projects = []
@@ -870,52 +602,6 @@ section('Fix10.A — migrate() real code: three shapes + V1-backup (Fix 4)')
   const twice = migrate(once)!
   assert(twice.schemaVersion === once.schemaVersion, 'Fix10.A: migrate() is idempotent (schemaVersion unchanged)')
   assert(twice.version === once.version, 'Fix10.A: migrate() is idempotent (version unchanged)')
-}
-
-section('Fix10.B — buildRankedIds() real code: pool, exclusions, framework')
-
-{
-  const riceItem = (id: string, reach: number, effort: number) => ({
-    id, kind: 'feature' as const, name: id, status: 'in_dev',
-    rice: { reach, impact: 2, confidence: 80, effort, scoredAt: '2025-01-01' },
-    wsjf: null, ownerIds: [],
-    projectId: null, moduleId: null, itemType: 'feature' as const,
-    statusLog: [], decisionLog: [], archived: false, order: 0,
-    createdAt: '2025-01-01T00:00:00Z', updatedAt: '2025-01-01T00:00:00Z',
-  })
-
-  const items = [riceItem('f-high', 5, 1), riceItem('f-low', 1, 10), riceItem('f-mid', 3, 3)]
-  const ranked = buildRankedIds(items as any, 'rice')
-  assert(ranked[0] === 'f-high', 'Fix10.B: highest RICE score → #1')
-  assert(ranked[ranked.length - 1] === 'f-low', 'Fix10.B: lowest RICE score → last')
-
-  // Must-Do excluded
-  const mustDoItem = { ...riceItem('f-mustdo', 5, 1), mustDo: { reason: 'Reg', at: '2025-01-01T00:00:00Z' } }
-  const rankedMD = buildRankedIds([...items, mustDoItem] as any, 'rice')
-  assert(!rankedMD.includes('f-mustdo'), 'Fix10.B: Must-Do excluded from RICE pool')
-
-  // Live project excluded
-  const liveProject = {
-    id: 'p-live', kind: 'project' as const, name: 'Live product', status: 'production',
-    rice: { reach: 5, impact: 3, confidence: 90, effort: 2, scoredAt: '2025-01-01' }, wsjf: null,
-    ownerIds: [], portfolio: 'Core', oneLiner: '', tags: [], milestones: [], featureIds: [],
-    tracks: [], statusLog: [], decisionLog: [], archived: false, order: 0,
-    createdAt: '2025-01-01T00:00:00Z', updatedAt: '2025-01-01T00:00:00Z',
-  }
-  const rankedLive = buildRankedIds([...items, liveProject] as any, 'rice')
-  assert(!rankedLive.includes('p-live'), 'Fix10.B: Live project excluded from RICE pool')
-
-  // Module competes in pool
-  const moduleItem = {
-    id: 'm-scored', kind: 'module' as const, name: 'Stats Dashboard', status: 'in_dev',
-    projectId: 'p1',
-    rice: { reach: 5, impact: 3, confidence: 95, effort: 1, scoredAt: '2025-01-01' }, wsjf: null,
-    ownerIds: [], statusLog: [], decisionLog: [], archived: false,
-    createdAt: '2025-01-01T00:00:00Z', updatedAt: '2025-01-01T00:00:00Z',
-  }
-  const rankedModule = buildRankedIds([...items, moduleItem] as any, 'rice')
-  assert(rankedModule.includes('m-scored'), 'Fix10.B: Fix1 — module enters RICE rank pool')
-  assert(rankedModule[0] === 'm-scored', 'Fix10.B: Fix1 — module with top score ranks #1')
 }
 
 section('Fix10.C — validateConsistency + selfHeal real code (Fix 7)')
@@ -1075,51 +761,6 @@ section('M5.1.D/E — DepartmentChips: all four TrackKind values available')
   assert(statuses[3] === 'blocked', 'D/E: implementation blocked chip')
 }
 
-section('M5.1.F — EXC-3: in-delivery + live projects excluded from rank pool')
-
-{
-  // F: IN_DELIVERY_STATUSES = ['development', 'in_testing']
-  // combined with LIVE_GROUP_STATUSES = [...live group]
-  const IN_DELIVERY = ['development', 'in_testing']
-  const LIVE_GROUP  = ['beta_production', 'production', 'production_monitoring', 'mvp_live']
-  const DELIVERY_EXCLUDED = [...IN_DELIVERY, ...LIVE_GROUP]
-
-  // Verify each in-delivery status is excluded
-  assert(DELIVERY_EXCLUDED.includes('development'), 'F: development excluded from rank pool')
-  assert(DELIVERY_EXCLUDED.includes('in_testing'),  'F: in_testing excluded from rank pool')
-  // Verify pre-dev statuses are NOT excluded (still rankable)
-  assert(!DELIVERY_EXCLUDED.includes('intake'),                'F: intake remains rankable')
-  assert(!DELIVERY_EXCLUDED.includes('architecture'),          'F: architecture remains rankable')
-  assert(!DELIVERY_EXCLUDED.includes('requirement_gathering'), 'F: req_gathering remains rankable')
-
-  // Rank pool test with real buildRankedIds
-  const devProject = {
-    id: 'dev-proj', kind: 'project' as const, name: 'In Dev', status: 'development',
-    rice: { reach: 5, impact: 3, confidence: 90, effort: 2, scoredAt: '2025-01-01' }, wsjf: null,
-    ownerIds: [], portfolio: 'Core', oneLiner: '', tags: [], milestones: [], featureIds: [],
-    tracks: [], statusLog: [], decisionLog: [], archived: false, order: 0,
-    createdAt: '2025-01-01T00:00:00Z', updatedAt: '2025-01-01T00:00:00Z',
-  }
-  const intakeProject = {
-    ...devProject, id: 'intake-proj', name: 'Intake', status: 'intake',
-  }
-  const ranked = buildRankedIds([devProject, intakeProject] as any, 'rice')
-  assert(!ranked.includes('dev-proj'),    'F: development project excluded from rank pool')
-  assert(ranked.includes('intake-proj'), 'F: intake project remains in rank pool')
-
-  // Features inside in-delivery projects STILL rank normally
-  const feature = {
-    id: 'f-in-dev', kind: 'feature' as const, name: 'Feature', status: 'in_dev',
-    projectId: 'dev-proj', moduleId: null,
-    rice: { reach: 5, impact: 3, confidence: 90, effort: 2, scoredAt: '2025-01-01' }, wsjf: null,
-    ownerIds: [], itemType: 'feature' as const, tags: [], statusLog: [], decisionLog: [],
-    archived: false, order: 0, createdAt: '2025-01-01T00:00:00Z', updatedAt: '2025-01-01T00:00:00Z',
-  }
-  const ranked2 = buildRankedIds([devProject, feature] as any, 'rice')
-  assert(!ranked2.includes('dev-proj'), 'F: dev project excluded, feature in same project still ranks')
-  assert(ranked2.includes('f-in-dev'), 'F: feature inside in-delivery project still ranks normally')
-}
-
 section('M5.1.C — Gantt two-level: module sub-groups appear under project rows')
 
 {
@@ -1190,66 +831,6 @@ section('M5.1.C — Gantt two-level: module sub-groups appear under project rows
   assert(modHeaderIdx < modTaskIdx, 'C-Gantt: module header before module task')
 }
 
-section('Item4 — deriveSections: order + Needs Scoring above In Delivery')
-
-{
-  // deriveSections is already tested indirectly via M5.1.F,
-  // but we now test it directly against real code.
-  const riceScored = {
-    id: 'f-scored', kind: 'feature' as const, name: 'Scored Feature', status: 'intake',
-    projectId: null, moduleId: null, itemType: 'feature' as const,
-    rice: { reach: 5, impact: 3, confidence: 80, effort: 2, scoredAt: '2025-01-01' }, wsjf: null,
-    ownerIds: [], tags: [], statusLog: [], decisionLog: [],
-    archived: false, order: 0,
-    createdAt: '2025-01-01T00:00:00Z', updatedAt: '2025-01-01T00:00:00Z',
-  }
-  const unscored = { ...riceScored, id: 'f-unscored', name: 'Unscored', rice: null }
-  const mustDo  = { ...riceScored, id: 'f-mustdo', name: 'MustDo',
-    mustDo: { reason: 'Reg', at: '2025-01-01T00:00:00Z' } }
-  const devProj = {
-    id: 'p-dev', kind: 'project' as const, name: 'In Dev', status: 'development',
-    portfolio: 'Core', oneLiner: '', ownerIds: [], tags: [], milestones: [], featureIds: [],
-    tracks: [], statusLog: [], decisionLog: [],
-    rice: null, wsjf: null, archived: false, order: 0,
-    createdAt: '2025-01-01T00:00:00Z', updatedAt: '2025-01-01T00:00:00Z',
-  }
-  const liveProj = { ...devProj, id: 'p-live', name: 'Live', status: 'production' }
-
-  const items = [riceScored, unscored, mustDo, devProj, liveProj] as any
-
-  const sections = deriveSections(items, 'rice', ['f-scored'], {})
-  const ids = sections.map((s: any) => s.id)
-
-  assert(ids[0] === 'must-do',       'Item4: section[0] = must-do')
-  assert(ids[1] === 'ranked',        'Item4: section[1] = ranked')
-  assert(ids[2] === 'needs-scoring', 'Item4: section[2] = needs-scoring (above in-delivery)')
-  assert(ids[3] === 'in-delivery',   'Item4: section[3] = in-delivery')
-  assert(ids[4] === 'live',          'Item4: section[4] = live')
-
-  // Must-Do items never in ranked/needs-scoring
-  const mustDoSection    = sections.find((s: any) => s.id === 'must-do')
-  const rankedSection    = sections.find((s: any) => s.id === 'ranked')
-  const needsSection     = sections.find((s: any) => s.id === 'needs-scoring')
-  assert(mustDoSection!.count === 1, 'Item4: must-do section has 1 item')
-  assert(!rankedSection!.items.some((i: any) => i.id === 'f-mustdo'), 'Item4: must-do NOT in ranked')
-  assert(!needsSection!.items.some((i: any) => i.id === 'f-mustdo'), 'Item4: must-do NOT in needs-scoring')
-
-  // Needs Scoring even when Ranked is empty
-  const sectionsNoRanked = deriveSections([unscored, devProj] as any, 'rice', [], {})
-  const nsIdx = sectionsNoRanked.findIndex((s: any) => s.id === 'needs-scoring')
-  const idIdx = sectionsNoRanked.findIndex((s: any) => s.id === 'in-delivery')
-  assert(nsIdx < idIdx, 'Item4: Needs Scoring above In Delivery even when Ranked is empty')
-
-  // showInDelivery=false hides In Delivery + Live
-  const hidden = deriveSections(items, 'rice', ['f-scored'], { showInDelivery: false })
-  assert(!hidden.some((s: any) => s.id === 'in-delivery'), 'Item4: showInDelivery=false hides in-delivery')
-  assert(!hidden.some((s: any) => s.id === 'live'), 'Item4: showInDelivery=false hides live')
-
-  // In Delivery items carry actual status (real StatusPill, no "Building" label hack)
-  const inDel = sections.find((s: any) => s.id === 'in-delivery')
-  assert(inDel!.items[0].status === 'development', 'Item4: in-delivery items carry real status value')
-}
-
 section('Item6 — Activity Log migration: idempotent, no duplicates')
 
 {
@@ -1282,6 +863,182 @@ section('Item6 — Activity Log migration: idempotent, no duplicates')
   const twice = migrate(once!)
   const proj2 = twice?.projectsV2?.[0] as any
   assert(proj2.activityLog.length === 2, 'Item6: idempotent — running migrate twice produces no duplicates')
+}
+
+section('A4.5 — N in flight: counts features+modules in non-terminal status on Live projects')
+
+{
+  // Real exported constant — not a local reimplementation
+  const TERMINAL = ['shipped', 'killed']
+
+  // inFlightCount logic mirrors ProjectCard.tsx and ProjectDrawer.tsx:
+  // Only live-group projects show the chip; count is features + modules not in terminal status
+  function inFlightCount(
+    projectStatus: string,
+    features: { status: string; archived: boolean }[],
+    modules:  { status: string; archived: boolean }[],
+  ): number {
+    if (!LIVE_GROUP_STATUSES.includes(projectStatus)) return 0
+    const liveFeatures = features.filter(f => !TERMINAL.includes(f.status) && !f.archived).length
+    const liveModules  = modules.filter(m => !TERMINAL.includes(m.status) && !m.archived).length
+    return liveFeatures + liveModules
+  }
+
+  // Non-live project: always 0 regardless of features
+  assert(
+    inFlightCount('development', [{ status: 'in_dev', archived: false }], []) === 0,
+    'A4.5: non-live project → inFlightCount = 0'
+  )
+
+  // Live project with active features
+  assert(
+    inFlightCount('production', [
+      { status: 'in_dev', archived: false },
+      { status: 'qa', archived: false },
+    ], []) === 2,
+    'A4.5: live project, 2 active features → count = 2'
+  )
+
+  // Terminal and archived features excluded
+  assert(
+    inFlightCount('production', [
+      { status: 'shipped', archived: false },   // terminal — excluded
+      { status: 'in_dev',  archived: true  },   // archived — excluded
+      { status: 'in_dev',  archived: false },   // active — counted
+    ], []) === 1,
+    'A4.5: terminal + archived features excluded from count'
+  )
+
+  // Modules counted alongside features
+  assert(
+    inFlightCount('mvp_live', [
+      { status: 'in_dev', archived: false },
+    ], [
+      { status: 'in_dev',  archived: false },
+      { status: 'killed',  archived: false }, // terminal — excluded
+    ]) === 2,
+    'A4.5: live project, 1 active feature + 1 active module + 1 terminal module → count = 2'
+  )
+
+  // All live statuses trigger the chip
+  const liveStatuses = ['beta_production', 'production', 'production_monitoring', 'mvp_live']
+  for (const status of liveStatuses) {
+    assert(
+      inFlightCount(status, [{ status: 'in_dev', archived: false }], []) === 1,
+      `A4.5: ${status} is a live-group status → chip active`
+    )
+  }
+
+  // Scoring removal did not affect the computation — LIVE_GROUP_STATUSES is unchanged
+  assert(
+    LIVE_GROUP_STATUSES.includes('production'),
+    'A4.5: LIVE_GROUP_STATUSES still includes production (not affected by scoring removal)'
+  )
+  assert(
+    !LIVE_GROUP_STATUSES.includes('development'),
+    'A4.5: development is not a live-group status (still rankable context)'
+  )
+}
+
+section('A5 — schemaVersion 4: prune migration removes scoring fields')
+
+{
+  // Fixture: record with every key on the removal list
+  const dirtyProject = {
+    id: 'p-dirty', kind: 'project', name: 'Legacy', portfolio: 'Core', status: 'intake',
+    oneLiner: 'keep this', ownerIds: ['m1'], targetQuarter: 'Q3 2026',
+    tags: [], milestones: [], featureIds: [], tracks: [], statusLog: [], decisionLog: [],
+    archived: false, order: 0, createdAt: '2025-01-01T00:00:00Z', updatedAt: '2025-01-01T00:00:00Z',
+    // scoring fields to prune
+    rice: { reach: 5, impact: 3, confidence: 80, effort: 2, scoredAt: '2025-01-01' },
+    wsjf: null,
+    mustDo: { reason: 'Reg', at: '2025-01-01T00:00:00Z' },
+    valueRating: 4,
+    effortEstimate: 'L',
+  }
+  const dirtyFeature = {
+    id: 'f-dirty', kind: 'feature', name: 'Feat', status: 'intake', itemType: 'feature',
+    projectId: null, moduleId: null, ownerIds: [], tags: [], statusLog: [], decisionLog: [],
+    archived: false, order: 0, createdAt: '2025-01-01T00:00:00Z', updatedAt: '2025-01-01T00:00:00Z',
+    rice: { reach: 3, impact: 2, confidence: 70, effort: 4, scoredAt: '2025-01-01' },
+    wsjf: null, mustDo: null, valueRating: 2, effortEstimate: 'S',
+  }
+
+  const payload = {
+    projects: [], members: [], tasks: [], dependencies: [], version: 1,
+    projectsV2: [dirtyProject],
+    featuresV2: [dirtyFeature],
+    modulesV2: [],
+    workspaceSettings: { framework: 'rice', someOtherKey: 'keep' },
+    schemaVersion: 3,  // trigger v4 migration
+  }
+
+  const once = migrate(payload as any)
+  const p = once?.projectsV2?.[0] as any
+  const f = once?.featuresV2?.[0] as any
+  const ws = once?.workspaceSettings as any
+
+  // All scoring fields must be absent from ProjectV2
+  assert(!('rice' in p),           'A5: rice removed from ProjectV2')
+  assert(!('wsjf' in p),           'A5: wsjf removed from ProjectV2')
+  assert(!('mustDo' in p),         'A5: mustDo removed from ProjectV2')
+  assert(!('valueRating' in p),    'A5: valueRating removed from ProjectV2')
+  assert(!('effortEstimate' in p), 'A5: effortEstimate removed from ProjectV2')
+  // All scoring fields absent from FeatureV2
+  assert(!('rice' in f),           'A5: rice removed from FeatureV2')
+  assert(!('wsjf' in f),           'A5: wsjf removed from FeatureV2')
+  assert(!('valueRating' in f),    'A5: valueRating removed from FeatureV2')
+  assert(!('effortEstimate' in f), 'A5: effortEstimate removed from FeatureV2')
+
+  // Deep-equality: full surviving field set unchanged — every non-scoring field byte-identical
+  const PRUNED = new Set(['rice','wsjf','mustDo','valueRating','effortEstimate'])
+  const dirtyKeys = Object.keys(dirtyProject).filter(k => !PRUNED.has(k))
+  for (const key of dirtyKeys) {
+    const orig = (dirtyProject as any)[key]
+    const migrated = p[key]
+    const match = JSON.stringify(orig) === JSON.stringify(migrated)
+    assert(match, `A5: surviving field '${key}' unchanged after migration`)
+  }
+
+  // Key-set on first output
+  const inputKeys  = new Set(Object.keys(dirtyProject))
+  const outputKeys = new Set(Object.keys(p))
+  const expectedKeys = new Set([...inputKeys].filter(k => !PRUNED.has(k)))
+  const extraKeys    = [...outputKeys].filter(k => !expectedKeys.has(k))
+  const missingKeys  = [...expectedKeys].filter(k => !outputKeys.has(k))
+  assert(extraKeys.length === 0,   `A5: no extra keys in output (found: ${extraKeys.join(',') || 'none'})`)
+  assert(missingKeys.length === 0, `A5: no surviving keys missing from output (missing: ${missingKeys.join(',') || 'none'})`)
+
+  // workspaceSettings: framework key gone, other keys survive
+  assert(!('framework' in ws),       'A5: workspaceSettings.framework key removed')
+  assert(ws.someOtherKey === 'keep', 'A5: workspaceSettings other keys preserved')
+
+  // schemaVersion bumped to 4
+  assert(once?.schemaVersion === 4, 'A5: schemaVersion bumped to 4')
+
+  // Idempotency: run migrate again — all 5 pruned keys still absent on second run
+  const twice = migrate(once!)
+  const p2 = twice?.projectsV2?.[0] as any
+  for (const key of ['rice','wsjf','mustDo','valueRating','effortEstimate']) {
+    assert(!(key in p2), `A5: idempotent — ${key} still absent on second run`)
+  }
+  assert(twice?.schemaVersion === 4, 'A5: idempotent — schemaVersion stays 4')
+
+  // Key-set on second run — catches re-added fields (the backfill class of bug)
+  const twice_keys = new Set(Object.keys(p2))
+  const extra2  = [...twice_keys].filter(k => !expectedKeys.has(k))
+  const miss2   = [...expectedKeys].filter(k => !twice_keys.has(k))
+  assert(extra2.length === 0,  `A5: key-set idempotent — no extra keys on second run (found: ${extra2.join(',') || 'none'})`)
+  assert(miss2.length === 0,   `A5: key-set idempotent — no missing keys on second run`)
+
+  // Clean record (no scoring keys) passes through unchanged
+  const cleanProject = { ...dirtyProject }
+  const pruneKeys = ['rice','wsjf','mustDo','valueRating','effortEstimate']
+  pruneKeys.forEach(k => delete (cleanProject as any)[k])
+  const cleanPayload = { ...payload, projectsV2: [cleanProject], schemaVersion: 3 } as any
+  const thrice = migrate(cleanPayload)
+  const p3 = thrice?.projectsV2?.[0] as any
+  assert(p3.name === 'Legacy', 'A5: clean record passes through unchanged')
 }
 
 })().then(() => {

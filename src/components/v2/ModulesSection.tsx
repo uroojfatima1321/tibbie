@@ -75,7 +75,7 @@ interface Props {
 }
 
 export function ModulesSection({ project, onOpenModule, onOpenFeature }: Props) {
-  const { modulesV2, featuresV2, rankedItemIds } = useApp()
+  const { modulesV2, featuresV2 } = useApp()
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
 
   const projectModules = modulesV2.filter(m => m.projectId === project.id)
@@ -91,19 +91,12 @@ export function ModulesSection({ project, onOpenModule, onOpenFeature }: Props) 
   }, [])
 
   function featureRow(f: FeatureV2, indent = false) {
-    const r = rankedItemIds.indexOf(f.id)
     const isImprovement = f.itemType === 'improvement'
     return (
       <button key={f.id}
         onClick={() => onOpenFeature?.(f.id)}
         className={`flex items-center gap-2 py-1.5 rounded-lg hover:bg-surface-50 text-sm w-full text-left ${indent ? 'pl-8 pr-2' : 'px-2'}`}
       >
-        {r >= 0 && !f.mustDo && (
-          <span className="font-mono text-[10px] bg-rust-500 text-white px-1.5 py-0.5 rounded-full shrink-0">#{r + 1}</span>
-        )}
-        {f.mustDo && (
-          <span className="font-sans text-[10px] font-semibold bg-brick-600 text-white px-1.5 py-0.5 rounded-full shrink-0">Must-Do</span>
-        )}
         {isImprovement
           ? <Wrench size={11} className="text-blue-400 shrink-0" />
           : <Tag size={11} className="text-ink-400 shrink-0" />
@@ -126,7 +119,6 @@ export function ModulesSection({ project, onOpenModule, onOpenFeature }: Props) 
           {projectModules.map(mod => {
             const modFeatures = featuresV2.filter(f => f.moduleId === mod.id)
             const isOpen = !collapsed.has(mod.id)
-            const modRank = rankedItemIds.indexOf(mod.id)
 
             return (
               <div key={mod.id} className="border border-surface-200 rounded-xl overflow-hidden">
@@ -135,12 +127,6 @@ export function ModulesSection({ project, onOpenModule, onOpenFeature }: Props) 
                   <button onClick={() => toggle(mod.id)} className="shrink-0 p-0.5 text-ink-400 hover:text-ink-700">
                     {isOpen ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
                   </button>
-                  {modRank >= 0 && !mod.mustDo && (
-                    <span className="font-mono text-[10px] bg-rust-500 text-white px-1.5 py-0.5 rounded-full shrink-0">#{modRank + 1}</span>
-                  )}
-                  {mod.mustDo && (
-                    <span className="font-sans text-[10px] font-semibold bg-brick-600 text-white px-1.5 py-0.5 rounded-full shrink-0">Must-Do</span>
-                  )}
                   <button
                     onClick={() => onOpenModule?.(mod.id)}
                     className="flex-1 text-left text-sm font-medium text-ink-900 hover:text-rust-600 transition-colors truncate"

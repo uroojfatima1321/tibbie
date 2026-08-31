@@ -2,7 +2,6 @@ import { forwardRef, useImperativeHandle, useRef, useState, useEffect } from 're
 import { BarChart2, Map, Layers, FolderOpen, Keyboard, Plus, PanelRight } from 'lucide-react'
 import { GanttView, type GanttHandle } from '../gantt/GanttView'
 import { RoadmapView } from '../views/RoadmapView'
-import { HeatmapView } from '../views/HeatmapView'
 import { ProjectDashboard } from '../projects/ProjectDashboard'
 import { FilterBar } from '../filters/FilterBar'
 import { StatsStrip } from '../shell/StatsStrip'
@@ -11,7 +10,7 @@ import { Sheet } from '../ui/Sheet'
 import { useApp } from '../../store/context'
 import type { Project, Task } from '../../types'
 
-export type WorkspaceView = 'gantt' | 'roadmap' | 'heatmap' | 'projects'
+export type WorkspaceView = 'gantt' | 'roadmap' | 'projects'
 
 export interface WorkspaceHandle {
   scrollToToday: () => void
@@ -66,7 +65,7 @@ export const Workspace = forwardRef<WorkspaceHandle, Props>(function Workspace(
   const TABS: { id: WorkspaceView; label: string; icon: React.ReactNode }[] = [
     { id: 'gantt',    label: 'Timeline', icon: <BarChart2 size={13} /> },
     { id: 'roadmap',  label: 'Roadmap',  icon: <Map size={13} /> },
-    { id: 'heatmap',  label: 'Workload', icon: <Layers size={13} /> },
+    { id: 'gantt',  label: 'Workload', icon: <Layers size={13} /> },
     { id: 'projects', label: 'Projects', icon: <FolderOpen size={13} /> },
   ]
 
@@ -146,9 +145,6 @@ export const Workspace = forwardRef<WorkspaceHandle, Props>(function Workspace(
             </div>
             <div className={`absolute inset-0 flex flex-col ${view === 'roadmap' ? '' : 'hidden'}`}>
               <RoadmapView onMilestoneClick={onTaskClick} />
-            </div>
-            <div className={`absolute inset-0 flex flex-col ${view === 'heatmap' ? '' : 'hidden'}`}>
-              <HeatmapView onClose={() => switchTab('gantt')} />
             </div>
             <div className={`absolute inset-0 flex flex-col ${view === 'projects' ? '' : 'hidden'}`}>
               {activeProjectId ? (

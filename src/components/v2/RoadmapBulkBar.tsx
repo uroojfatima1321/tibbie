@@ -5,8 +5,6 @@ import type { ProjectV2, FeatureV2, ProjectStatus, FeatureStatus } from '../../t
 import { ALL_PROJECT_STATUSES, ALL_FEATURE_STATUSES, getStatusLabel, StatusPill } from './StatusPill'
 import { PortfolioCombobox } from './PortfolioCombobox'
 import { ConfirmDialog } from '../ui/Confirm'
-import { ValueDots } from './ValueDots'
-
 const REASON_STATUSES: string[] = ['on_hold', 'killed', 'rework']
 
 interface Props {
@@ -17,17 +15,13 @@ interface Props {
   onClear: () => void
 }
 
-type Action = 'archive' | 'status' | 'portfolio' | 'value' | null
+type Action = 'archive' | 'portfolio' | null
 
 export function RoadmapBulkBar({ selectedIds, allProjects, allFeatures, portfolios, onClear }: Props) {
-  const { archiveBulkV2, setStatusBulk, moveToPortfolioBulk, setValueRatingBulk } = useApp()
+  const { archiveBulkV2, moveToPortfolioBulk } = useApp()
   const [action, setAction] = useState<Action>(null)
   const [archiveConfirm, setArchiveConfirm] = useState(false)
-  const [statusTarget, setStatusTarget] = useState<ProjectStatus | FeatureStatus>('on_hold')
-  const [reason, setReason] = useState('')
-  const [reasonErr, setReasonErr] = useState('')
   const [portfolio, setPortfolio] = useState('')
-  const [valueRating, setValueRating] = useState<1|2|3|4|5|undefined>(undefined)
   const [applying, setApplying] = useState(false)
 
   const count = selectedIds.size
@@ -49,35 +43,11 @@ export function RoadmapBulkBar({ selectedIds, allProjects, allFeatures, portfoli
     } finally { setApplying(false) }
   }
 
-  async function doStatus() {
-    if (REASON_STATUSES.includes(statusTarget) && !reason.trim()) {
-      setReasonErr('Reason is required'); return
-    }
-    setApplying(true)
-    try {
-      const items = [
-        ...selProjects.map(p => ({ id: p.id, kind: 'project' as const, currentStatus: p.status })),
-        ...selFeatures.map(f => ({ id: f.id, kind: 'feature' as const, currentStatus: f.status })),
-      ]
-      await setStatusBulk(items, statusTarget, reason.trim() || undefined)
-      setAction(null); onClear()
-    } finally { setApplying(false) }
-  }
-
   async function doPortfolio() {
     if (!portfolio.trim()) return
     setApplying(true)
     try {
       await moveToPortfolioBulk(selProjects.map(p => p.id), portfolio.trim())
-      setAction(null); onClear()
-    } finally { setApplying(false) }
-  }
-
-  async function doValue() {
-    setApplying(true)
-    try {
-      await setValueRatingBulk(selProjects.map(p => p.id), 'project', valueRating)
-      await setValueRatingBulk(selFeatures.map(f => f.id), 'feature', valueRating)
       setAction(null); onClear()
     } finally { setApplying(false) }
   }
@@ -91,9 +61,7 @@ export function RoadmapBulkBar({ selectedIds, allProjects, allFeatures, portfoli
           <div className="flex items-center gap-1 flex-1 overflow-x-auto">
             {[
               { id: 'archive' as Action, label: 'Archive' },
-              { id: 'status' as Action,   label: 'Set status' },
               { id: 'portfolio' as Action, label: 'Move to portfolio', disabled: selFeatures.length > 0 },
-              { id: 'value' as Action,    label: 'Business Value' },
             ].map(btn => (
               <button key={btn.id} onClick={() => setAction(action === btn.id ? null : btn.id)}
                 disabled={btn.disabled}
@@ -122,26 +90,6 @@ export function RoadmapBulkBar({ selectedIds, allProjects, allFeatures, portfoli
               <button onClick={() => { setAction(null); setArchiveConfirm(true) }} className="btn-primary w-full !py-1.5 text-sm">Confirm archive</button>
             </div>
           )}
-          {action === 'status' && (
-            <div className="space-y-3">
-              <p className="text-xs font-semibold text-ink-600">Set status for {count} item{count > 1 ? 's' : ''}</p>
-              <select className="input w-full text-sm" value={statusTarget} onChange={e => { setStatusTarget(e.target.value as any); setReason(''); setReasonErr('') }}>
-                {[...ALL_PROJECT_STATUSES, ...ALL_FEATURE_STATUSES.filter(s => !ALL_PROJECT_STATUSES.includes(s as any))].map(s => (
-                  <option key={s} value={s}>{getStatusLabel(s)}</option>
-                ))}
-              </select>
-              {REASON_STATUSES.includes(statusTarget) && (
-                <>
-                  <input className="input w-full text-sm" placeholder="Reason (required, applied to all)"
-                    value={reason} onChange={e => { setReason(e.target.value); setReasonErr('') }} />
-                  {reasonErr && <p className="text-xs text-brick-500">{reasonErr}</p>}
-                </>
-              )}
-              <button onClick={doStatus} disabled={applying} className="btn-primary w-full !py-1.5 text-sm">
-                {applying ? 'Applying…' : `Apply to ${count}`}
-              </button>
-            </div>
-          )}
           {action === 'portfolio' && (
             <div className="space-y-3">
               <p className="text-xs font-semibold text-ink-600">Move {selProjects.length} project{selProjects.length > 1 ? 's' : ''} to portfolio</p>
@@ -154,18 +102,6 @@ export function RoadmapBulkBar({ selectedIds, allProjects, allFeatures, portfoli
               />
               <button onClick={doPortfolio} disabled={!portfolio.trim() || applying} className="btn-primary w-full !py-1.5 text-sm">
                 {applying ? 'Moving…' : 'Move'}
-              </button>
-            </div>
-          )}
-          {action === 'value' && (
-            <div className="space-y-3">
-              <p className="text-xs font-semibold text-ink-600">Set Business Value for {count}</p>
-              <div className="flex items-center justify-center gap-1 py-2">
-                <ValueDots value={valueRating} editable onSet={v => setValueRating(v)} size="md" />
-              </div>
-              <p className="text-xs text-ink-400 text-center">{valueRating ? `${valueRating} / 5` : 'Click to set (click again to clear)'}</p>
-              <button onClick={doValue} disabled={applying} className="btn-primary w-full !py-1.5 text-sm">
-                {applying ? 'Applying…' : 'Apply'}
               </button>
             </div>
           )}

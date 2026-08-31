@@ -4,7 +4,7 @@ import type {
   TibbieData, Project, Task, Member, Holiday, ProjectUpdate, UpdateSignal,
   PhaseTemplate, ProjectPhase, PhaseStatus,
   Filters, GroupBy, ZoomLevel,
-  ProjectV2, FeatureV2, ModuleV2, ProjectStatus, FeatureStatus, StatusLogEntry, DecisionEntry, Milestone, DepartmentTrack, TrackKind, RiceScore, WsjfScore, MustDoTag,
+  ProjectV2, FeatureV2, ModuleV2, ProjectStatus, FeatureStatus, StatusLogEntry, DecisionEntry, Milestone, DepartmentTrack, TrackKind,
   DeletionLogEntry, ActivityEntry, ActivityTag,
 } from '../types'
 import { adapter, isLocalMode, subscribeLocalMode, popConflictDetected, getLoadDiagnostic, type LoadDiagnostic } from '../api/adapter'
@@ -12,7 +12,6 @@ import { api, getSessionPin, setSessionPin, clearSessionPin } from '../api/clien
 import { buildSeedData, buildDemoData } from '../lib/seed'
 import { uid, nextProjectColor, nextMemberColor } from '../lib/util'
 import { migrate } from '../lib/migrate'
-import { buildRankedIds, DELIVERY_EXCLUDED_STATUSES } from '../lib/rank'
 import { validateConsistency, selfHeal } from '../lib/consistency'
 
 interface ToastMsg { id: string; kind: 'info' | 'error' | 'success'; text: string; count?: number }
@@ -82,8 +81,6 @@ interface Ctx {
   permanentDeleteMany: (projectIds: string[], featureIds: string[]) => Promise<void>  // CR-2.3 bulk
   exportDataJSON: () => void                             // CR-2.5
   importDataJSON: (raw: string) => Promise<void>         // CR-2.5
-  setValueRatingBulk: (ids: string[], kind: 'project' | 'feature' | 'module', rating: 1|2|3|4|5|undefined) => Promise<void>
-  setStatusBulk: (items: { id: string; kind: 'project'|'feature'|'module'; currentStatus: string }[], status: ProjectStatus | FeatureStatus, reason?: string) => Promise<void>
   moveToPortfolioBulk: (projectIds: string[], portfolio: string) => Promise<void>
   archiveBulkV2: (projectIds: string[], featureIds: string[]) => Promise<void>
 
@@ -92,7 +89,6 @@ interface Ctx {
   featuresV2: FeatureV2[]
   archivedProjectsV2: ProjectV2[]
   archivedFeaturesV2: FeatureV2[]
-  rankedItemIds: string[]      // projects + features ranked together by RICE score; derived, never stored
 
   userPresets: { name: string; filter: Record<string, unknown> }[]
   saveUserPreset: (name: string, filter: Record<string, unknown>) => Promise<void>
@@ -141,11 +137,6 @@ interface Ctx {
   stagedCount: number
   isSaving: boolean
   saveNow: () => Promise<void>
-
-  // ── Phase B+C: framework + Must-Do + clientTimeline ───────────────────────
-  framework: 'rice' | 'wsjf'
-  setFramework: (fw: 'rice' | 'wsjf') => Promise<void>
-  applyMustDo: (id: string, kind: 'project' | 'feature' | 'module', mustDo: MustDoTag | null) => Promise<void>
 
   // ── Phase D: modules ──────────────────────────────────────────────────────
   modulesV2: ModuleV2[]
@@ -201,6 +192,8 @@ const PHASE_STATUS_TO_SIGNAL: Record<PhaseStatus, UpdateSignal> = {
 
 // Fix 9 (R1-H2): module-level key so it's available in mutate before crashDraft state is declared
 const CRASH_DRAFT_KEY = 'tibbie-crash-draft-v1'
+const v2now = () => new Date().toISOString()
+const v2id  = () => uid()
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
   const qc = useQueryClient()
@@ -711,14 +704,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const featuresV2 = useMemo(() => (dataQuery.data?.featuresV2 || []).filter(f => !f.archived), [dataQuery.data])
   const modulesV2  = useMemo(() => (dataQuery.data?.modulesV2  || []).filter(m => !m.archived), [dataQuery.data])
 
-  // Active scoring framework — read from persisted workspaceSettings
-  const framework = (dataQuery.data?.workspaceSettings?.framework ?? 'rice') as 'rice' | 'wsjf'
-
-  // F: uses buildRankedIds from rank.ts, which now uses DELIVERY_EXCLUDED_STATUSES (in-delivery + live)
-  const rankedItemIds = useMemo<string[]>(() =>
-    buildRankedIds([...projectsV2, ...featuresV2, ...modulesV2], framework)
-  , [projectsV2, featuresV2, modulesV2, framework])
-
   const archivedProjectsV2 = useMemo(() => (dataQuery.data?.projectsV2 || []).filter(p => p.archived), [dataQuery.data])
   const archivedFeaturesV2 = useMemo(() => (dataQuery.data?.featuresV2 || []).filter(f => f.archived), [dataQuery.data])
   const archivedModulesV2  = useMemo(() => (dataQuery.data?.modulesV2  || []).filter(m => m.archived), [dataQuery.data])
@@ -801,13 +786,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   // ── CR-2 derived state ────────────────────────────────────────────────────
   const deletionLog = useMemo(() => dataQuery.data?.deletionLog || [], [dataQuery.data])
 
-  /** Eligible orphans: migration-generated ID, no features, no RICE, no tracks,
+  /** Eligible orphans: migration-generated ID, no features, no tracks,
    *  ≤1 status log entry (just the "Created" one), no decisions. */
   const orphanProjectsV2 = useMemo(() =>
     (dataQuery.data?.projectsV2 || []).filter(p =>
       p.id.startsWith('v2-') &&
       p.featureIds.length === 0 &&
-      p.rice == null &&
       p.tracks.length === 0 &&
       p.statusLog.length <= 1 &&
       p.decisionLog.length === 0
@@ -894,43 +878,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }))
   }, 'Archived'), [mutate, wrap])
 
-  const setStatusBulk: Ctx['setStatusBulk'] = useCallback((items, status, reason) => wrap(async () => {
-    await mutate(d => {
-      let pV2 = [...(d.projectsV2 || [])]
-      let fV2 = [...(d.featuresV2 || [])]
-      let mV2 = [...(d.modulesV2  || [])]
-      const now = v2now()
-      for (const item of items) {
-        const entry: StatusLogEntry = { id: v2id(), from: item.currentStatus, to: status, at: now }
-        const patch: any = { status, updatedAt: now }
-        if (status === 'on_hold' && reason) patch.holdReason = reason
-        if (status === 'killed' && reason) patch.killReason = reason
-        if (item.kind === 'project') {
-          pV2 = pV2.map(p => p.id === item.id ? { ...p, ...patch, statusLog: [...p.statusLog, entry] } : p)
-        } else if (item.kind === 'module') {
-          mV2 = mV2.map(m => m.id === item.id ? { ...m, ...patch, statusLog: [...m.statusLog, entry] } : m)
-        } else {
-          fV2 = fV2.map(f => f.id === item.id ? { ...f, ...patch, statusLog: [...f.statusLog, entry] } : f)
-        }
-      }
-      return { ...d, projectsV2: pV2, featuresV2: fV2, modulesV2: mV2 }
-    })
-  }), [mutate, wrap])
-
   const moveToPortfolioBulk: Ctx['moveToPortfolioBulk'] = useCallback((projectIds, portfolio) => wrap(async () => {
     await mutate(d => ({
       ...d,
       projectsV2: (d.projectsV2 || []).map(p => projectIds.includes(p.id) ? { ...p, portfolio, updatedAt: v2now() } : p),
-    }))
-  }), [mutate, wrap])
-
-  const setValueRatingBulk: Ctx['setValueRatingBulk'] = useCallback((ids, kind, rating) => wrap(async () => {
-    await mutate(d => ({
-      ...d,
-      projectsV2: kind === 'project' ? (d.projectsV2 || []).map(p => ids.includes(p.id) ? { ...p, valueRating: rating, updatedAt: v2now() } : p) : d.projectsV2,
-      featuresV2: kind === 'feature' ? (d.featuresV2 || []).map(f => ids.includes(f.id) ? { ...f, valueRating: rating, updatedAt: v2now() } : f) : d.featuresV2,
-      // Fix 1 (R2-C1): modules are scoreable (value rating included)
-      modulesV2:  kind === 'module'  ? (d.modulesV2  || []).map(m => ids.includes(m.id) ? { ...m, valueRating: rating, updatedAt: v2now() } : m) : d.modulesV2,
     }))
   }), [mutate, wrap])
 
@@ -974,9 +925,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }), [mutate, wrap])
 
   // ── V2 helpers ─────────────────────────────────────────────────────────────
-  const v2now = () => new Date().toISOString()
-  const v2id = () => uid()
-
   const addProjectV2: Ctx['addProjectV2'] = useCallback((input) => wrap(async () => {
     const now = v2now()
     const p: ProjectV2 = {
@@ -989,8 +937,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       statusLog: [{ id: v2id(), from: '', to: 'intake', at: now, note: 'Created' }],
       decisionLog: [], archived: false,
       order: (dataQuery.data?.projectsV2 || []).length,
-      rice: null,
-      wsjf: null,
       createdAt: now, updatedAt: now,
     }
     await mutate(d => ({ ...d, projectsV2: [...(d.projectsV2 || []), p] }))
@@ -1124,7 +1070,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       moduleId: input.moduleId ?? null,
       itemType: input.itemType ?? 'feature',
       status: 'intake',
-      rice: null, wsjf: null,
       ownerIds: [], tags: [],
       statusLog: [{ id: v2id(), from: '', to: 'intake', at: now, note: 'Created' }],
       decisionLog: [], archived: false,
@@ -1184,7 +1129,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       projectId: input.projectId,
       status: 'intake',
       ownerIds: [],
-      rice: null, wsjf: null,
       milestones: [], tracks: [],   // EXC-1: roadmap fields
       statusLog: [{ id: v2id(), from: '', to: 'intake', at: now, note: 'Created' }],
       decisionLog: [], archived: false,
@@ -1347,56 +1291,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }), [mutate, wrap])
 
   // ── Phase C: framework setting ────────────────────────────────────────────
-  const setFramework: Ctx['setFramework'] = useCallback((fw) => wrap(async () => {
-    await mutate(d => ({
-      ...d,
-      workspaceSettings: { ...(d.workspaceSettings ?? {}), framework: fw },
-    }))
-  }), [mutate, wrap])
-
   // ── Phase B+C+D: Must-Do tagging (projects, features, modules) ───────────────
-  const applyMustDo: Ctx['applyMustDo'] = useCallback((id, kind, mustDo) => wrap(async () => {
-    const now = v2now()
-    if (kind === 'project') {
-      await mutate(d => ({
-        ...d,
-        projectsV2: (d.projectsV2 || []).map(p => {
-          if (p.id !== id) return p
-          if (mustDo === null) {
-            const entry: StatusLogEntry = { id: v2id(), from: p.status, to: p.status, at: now, note: 'Must-Do tag removed' }
-            return { ...p, mustDo: undefined, statusLog: [...p.statusLog, entry], updatedAt: now }
-          }
-          return { ...p, mustDo, updatedAt: now }
-        }),
-      }))
-    } else if (kind === 'feature') {
-      await mutate(d => ({
-        ...d,
-        featuresV2: (d.featuresV2 || []).map(f => {
-          if (f.id !== id) return f
-          if (mustDo === null) {
-            const entry: StatusLogEntry = { id: v2id(), from: f.status, to: f.status, at: now, note: 'Must-Do tag removed' }
-            return { ...f, mustDo: undefined, statusLog: [...f.statusLog, entry], updatedAt: now }
-          }
-          return { ...f, mustDo, updatedAt: now }
-        }),
-      }))
-    } else {
-      // module
-      await mutate(d => ({
-        ...d,
-        modulesV2: (d.modulesV2 || []).map(m => {
-          if (m.id !== id) return m
-          if (mustDo === null) {
-            const entry: StatusLogEntry = { id: v2id(), from: m.status, to: m.status, at: now, note: 'Must-Do tag removed' }
-            return { ...m, mustDo: undefined, statusLog: [...m.statusLog, entry], updatedAt: now }
-          }
-          return { ...m, mustDo, updatedAt: now }
-        }),
-      }))
-    }
-  }, mustDo ? 'Marked Must-Do' : 'Must-Do tag removed'), [mutate, wrap])
-
   const seed: Ctx['seed'] = useCallback(() => wrap(async () => {
     const seedData = buildSeedData()   // empty — seed() resets to blank
     qc.setQueryData(['data'], seedData)
@@ -1442,11 +1337,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     addProjectPhase, updateProjectPhase, deleteProjectPhase, reorderProjectPhases,
     seed, loadDemoData,
     // V2
-    localMode, loadDiagnostic, projectsV2, featuresV2, archivedProjectsV2, archivedFeaturesV2, rankedItemIds, userPresets, saveUserPreset, deleteUserPreset,
+    localMode, loadDiagnostic, projectsV2, featuresV2, archivedProjectsV2, archivedFeaturesV2, userPresets, saveUserPreset, deleteUserPreset,
     // CR-2
     deletionLog, orphanProjectsV2,
     cleanupOrphans, permanentDeleteProjectV2, permanentDeleteFeatureV2, permanentDeleteMany,
-    archiveBulkV2, setStatusBulk, moveToPortfolioBulk, setValueRatingBulk,
+    archiveBulkV2, moveToPortfolioBulk,
     exportDataJSON, importDataJSON,
     addProjectV2, updateProjectV2, archiveProjectV2, restoreProjectV2,
     addProjectV2StatusLog, addProjectV2Decision,
@@ -1459,7 +1354,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     activeProjectId, setActiveProjectId,
     toasts, pushToast, dismissToast,
     isDirty, stagedCount, isSaving, saveNow,
-    framework, setFramework, applyMustDo,
     modulesV2, archivedModulesV2,
     addModuleV2, updateModuleV2, archiveModuleV2, restoreModuleV2, permanentDeleteModuleV2,
     addModuleV2StatusLog, addModuleV2Decision,
@@ -1480,7 +1374,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     addProjectPhase, updateProjectPhase, deleteProjectPhase, reorderProjectPhases,
     seed, loadDemoData,
     // V2
-    projectsV2, featuresV2, rankedItemIds,
+    projectsV2, featuresV2,
     addProjectV2, updateProjectV2, archiveProjectV2, restoreProjectV2,
     addProjectV2StatusLog, addProjectV2Decision,
     addProjectV2Milestone, updateProjectV2Milestone,
@@ -1488,12 +1382,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     addFeatureV2, updateFeatureV2, moveFeatureV2, archiveFeatureV2, restoreFeatureV2,
     addFeatureV2StatusLog, addFeatureV2Decision,
     cleanupOrphans, permanentDeleteProjectV2, permanentDeleteFeatureV2, permanentDeleteMany,
-    archiveBulkV2, setStatusBulk, moveToPortfolioBulk, setValueRatingBulk,
+    archiveBulkV2, moveToPortfolioBulk,
     exportDataJSON, importDataJSON,
     filters, groupBy, zoom, myTasksMemberId, searchOpen, activeProjectId,
     toasts, pushToast, dismissToast, qc,
     isDirty, stagedCount, isSaving, saveNow,
-    framework, setFramework, applyMustDo,
     modulesV2, archivedModulesV2,
     addModuleV2, updateModuleV2, archiveModuleV2, restoreModuleV2, permanentDeleteModuleV2,
     addModuleV2StatusLog, addModuleV2Decision,
