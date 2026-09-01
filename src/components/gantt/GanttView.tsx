@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState, forwardRef, useImperativeHandle, useCallback, useEffect } from 'react'
+import { useMemo, useRef, useState, forwardRef, useImperativeHandle, useCallback, useEffect, useLayoutEffect } from 'react'
 import {
   parseISO, differenceInCalendarDays, addDays, format,
   startOfWeek, startOfMonth, isBefore, isAfter, getDay, addMonths,
@@ -20,6 +20,7 @@ import {
   ExternalLink, Copy, Trash2, User,
 } from 'lucide-react'
 import { ConfirmDialog } from '../ui/Confirm'
+import { Popover } from '../ui/Popover'
 import { V1BulkBar } from '../v1/V1BulkBar'
 
 interface Props {
@@ -32,6 +33,12 @@ export interface GanttHandle {
 }
 
 const DAY_WIDTH: Record<'day' | 'week' | 'month', number> = { day: 40, week: 14, month: 4 }
+
+// B1: grid always extends this far beyond today in each direction (in days)
+// 3 screens forward at the widest zoom (month=4px/day, typical viewport ~1200px → ~300 days)
+// ensures an empty board still shows a full scrollable grid
+const BUFFER_BACK_DAYS  = 90   // ~3 months back
+const BUFFER_FWD_DAYS   = 365  // ~12 months forward — 3+ full screens at any zoom
 
 const STATUS_FILL: Record<TaskStatus, string> = {
   not_started: '#A8A29A',
@@ -68,8 +75,7 @@ interface DragState {
 // ── Context menu ──────────────────────────────────────────────────────────────
 interface ContextMenuState {
   taskId: string
-  x: number
-  y: number
+  triggerRef: React.RefObject<HTMLElement>
 }
 
 // ── Inline create ─────────────────────────────────────────────────────────────
@@ -232,6 +238,11 @@ export const GanttView = forwardRef<GanttHandle, Props>(function GanttView({ onT
     setSelectedTaskIds(new Set())
   }
 
+  // B1: windowStart is state — the single source of truth for the visible date position.
+  // rangeStart/totalDays are derived from it + the data extent + fixed buffers.
+  // All navigation (Today, Prev, Next, native scroll) writes windowStart.
+  const [windowStart, setWindowStart] = useState<Date>(() => addDays(parseISO(today()), -BUFFER_BACK_DAYS))
+
   const dayWidth = DAY_WIDTH[zoom]
 
   // Sync ref so keyboard pan always uses current dayWidth without re-subscribing
@@ -270,28 +281,73 @@ export const GanttView = forwardRef<GanttHandle, Props>(function GanttView({ onT
   }, [data, filters, myTasksMemberId])
 
   const { rangeStart, rangeEndISO, totalDays } = useMemo(() => {
-    if (filteredTasks.length === 0) {
-      const t = parseISO(today())
-      const startD = addDays(t, -7)
-      const endD = addDays(t, 30)
-      return { rangeStart: startD, rangeEndISO: format(endD, 'yyyy-MM-dd'), totalDays: 38 }
-    }
-    let min = parseISO(filteredTasks[0].startDate)
-    let max = parseISO(filteredTasks[0].endDate)
+    const todayD = parseISO(today())
+    // Data extent (null if no tasks)
+    let dataMin: Date | null = null
+    let dataMax: Date | null = null
     for (const t of filteredTasks) {
       const s = parseISO(t.startDate), e = parseISO(t.endDate)
-      if (isBefore(s, min)) min = s
-      if (isAfter(e, max)) max = e
+      if (dataMin === null || isBefore(s, dataMin)) dataMin = s
+      if (dataMax === null || isAfter(e, dataMax)) dataMax = e
     }
-    const padded = { s: addDays(min, -3), e: addDays(max, 7) }
+    // Grid always spans: min(data, today - BUFFER_BACK_DAYS) → max(data, today + BUFFER_FWD_DAYS)
+    const gridStart = addDays(todayD, -BUFFER_BACK_DAYS)
+    const gridEnd   = addDays(todayD,  BUFFER_FWD_DAYS)
+    const start = dataMin && isBefore(dataMin, gridStart) ? addDays(dataMin, -3) : gridStart
+    const end   = dataMax && isAfter(dataMax, gridEnd)    ? addDays(dataMax, 7)  : gridEnd
     return {
-      rangeStart: padded.s,
-      rangeEndISO: format(padded.e, 'yyyy-MM-dd'),
-      totalDays: differenceInCalendarDays(padded.e, padded.s) + 1,
+      rangeStart: start,
+      rangeEndISO: format(end, 'yyyy-MM-dd'),
+      totalDays: differenceInCalendarDays(end, start) + 1,
     }
   }, [filteredTasks])
 
   const rangeStartISO = useMemo(() => format(rangeStart, 'yyyy-MM-dd'), [rangeStart])
+
+  // B1: Sync scroll position FROM windowStart (after Today/Prev/Next or zoom change)
+  // useLayoutEffect fires before paint, preventing a flash at wrong position
+  const suppressScrollSync = useRef(false)
+  useLayoutEffect(() => {
+    const el = scrollerRef.current
+    if (!el) return
+    const offset = differenceInCalendarDays(windowStart, rangeStart) * dayWidth
+    suppressScrollSync.current = true
+    el.scrollLeft = Math.max(0, offset)
+    // Suppress the scroll event handler for this programmatic scroll
+    const t = setTimeout(() => { suppressScrollSync.current = false }, 50)
+    return () => clearTimeout(t)
+  }, [windowStart, rangeStart, dayWidth])
+
+  // B1: On mount, centre on today
+  const mountedRef = useRef(false)
+  useLayoutEffect(() => {
+    if (mountedRef.current) return
+    mountedRef.current = true
+    const el = scrollerRef.current
+    if (!el) return
+    const todayD = parseISO(today())
+    const off = differenceInCalendarDays(todayD, rangeStart) * dayWidth
+    el.scrollLeft = Math.max(0, off - el.clientWidth / 2)
+  }, [rangeStart, dayWidth])
+
+  // B1: Native scroll updates windowStart (debounced to avoid thrash)
+  const scrollUpdateTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(() => {
+    const el = scrollerRef.current
+    if (!el) return
+    function onScroll() {
+      if (suppressScrollSync.current) return
+      if (scrollUpdateTimer.current) clearTimeout(scrollUpdateTimer.current)
+      scrollUpdateTimer.current = setTimeout(() => {
+        const el = scrollerRef.current
+        if (!el) return
+        const dayOff = Math.floor(el.scrollLeft / dayWidthRef.current)
+        setWindowStart(addDays(rangeStart, dayOff))
+      }, 80)
+    }
+    el.addEventListener('scroll', onScroll, { passive: true })
+    return () => { el.removeEventListener('scroll', onScroll); if (scrollUpdateTimer.current) clearTimeout(scrollUpdateTimer.current) }
+  }, [rangeStart])
 
   const holidayMap = useMemo(
     () => expandHolidays(data?.holidays || [], rangeStartISO, rangeEndISO),
@@ -506,12 +562,11 @@ export const GanttView = forwardRef<GanttHandle, Props>(function GanttView({ onT
     return out
   }, [rangeStart, totalDays, dayWidth, zoom])
 
+  // B1: today is always within the buffered range, so todayX is always a number
   const todayX = useMemo(() => {
-    const t = parseISO(today())
-    const off = differenceInCalendarDays(t, rangeStart)
-    if (off < 0 || off > totalDays) return null
+    const off = differenceInCalendarDays(parseISO(today()), rangeStart)
     return off * dayWidth + dayWidth / 2
-  }, [rangeStart, totalDays, dayWidth])
+  }, [rangeStart, dayWidth])
 
   const arrowPaths = useMemo(() => {
     if (!data) return []
@@ -539,26 +594,28 @@ export const GanttView = forwardRef<GanttHandle, Props>(function GanttView({ onT
   const totalHeight = rows.length * rowHeight
 
   const paginate = useCallback((direction: 'prev' | 'next' | 'today') => {
-    const scroller = scrollerRef.current
-    if (!scroller) return
+    const el = scrollerRef.current
+    if (!el) return
+
     if (direction === 'today') {
-      if (todayX == null) return
-      const target = Math.max(0, todayX - scroller.clientWidth / 2)
-      scroller.scrollTo({ left: target, behavior: 'smooth' })
+      // Today: set windowStart so today is centred
+      const todayD = parseISO(today())
+      const viewDays = Math.floor(el.clientWidth / dayWidthRef.current)
+      setWindowStart(addDays(todayD, -Math.floor(viewDays / 2)))
       return
     }
-    const centerX = scroller.scrollLeft + scroller.clientWidth / 2
-    const dayIndex = Math.floor(centerX / dayWidth)
-    const centerDate = addDays(rangeStart, Math.max(0, Math.min(totalDays - 1, dayIndex)))
-    const targetMonth = direction === 'next'
-      ? startOfMonth(addMonths(centerDate, 1))
-      : startOfMonth(addMonths(centerDate, -1))
-    const targetDayOff = differenceInCalendarDays(targetMonth, rangeStart)
-    const clamped = Math.max(0, Math.min(totalDays - 1, targetDayOff))
-    const targetX = clamped * dayWidth
-    const target = Math.max(0, targetX - 24)
-    scroller.scrollTo({ left: target, behavior: 'smooth' })
-  }, [rangeStart, totalDays, dayWidth, todayX])
+
+    // Prev/Next: move exactly one viewport width, snapped to the zoom unit
+    const viewDays = Math.floor(el.clientWidth / dayWidthRef.current)
+    const currentDayOff = Math.floor(el.scrollLeft / dayWidthRef.current)
+    const currentStart = addDays(rangeStart, currentDayOff)
+
+    if (direction === 'next') {
+      setWindowStart(addDays(currentStart, viewDays))
+    } else {
+      setWindowStart(addDays(currentStart, -viewDays))
+    }
+  }, [rangeStart, dayWidth])
 
   // Helper to render a project's current-phase badge in the left column
   const renderPhaseBadge = (projectId: string) => {
@@ -1063,7 +1120,14 @@ export const GanttView = forwardRef<GanttHandle, Props>(function GanttView({ onT
                 return (
                   <g key={t.id}
                     onClick={e => { if (!drag) { e.stopPropagation(); onTaskClick(t.id) } }}
-                    onContextMenu={e => { e.preventDefault(); e.stopPropagation(); if (editMode) setContextMenu({ taskId: t.id, x: e.clientX, y: e.clientY }) }}
+                    onContextMenu={e => {
+                      e.preventDefault(); e.stopPropagation()
+                      if (!editMode) return
+                      // Create a virtual element at the right-click position for Popover anchoring
+                      const virt = { getBoundingClientRect: () => ({ top: e.clientY, bottom: e.clientY, left: e.clientX, right: e.clientX, width: 0, height: 0, x: e.clientX, y: e.clientY, toJSON: () => ({}) }) }
+                      const trigRef = { current: virt } as unknown as React.RefObject<HTMLElement>
+                      setContextMenu({ taskId: t.id, triggerRef: trigRef })
+                    }}
                     style={{ cursor: drag ? (drag.type === 'move' ? 'grabbing' : 'ew-resize') : 'pointer' }}
                     opacity={isDragging ? 0.75 : 1}
                   >
@@ -1152,14 +1216,16 @@ export const GanttView = forwardRef<GanttHandle, Props>(function GanttView({ onT
         />
       )}
 
-      {/* ── Right-click context menu ─────────────────────────────────── */}
+      {/* ── Right-click context menu — Popover primitive (B2 commit 1) ─── */}
       {contextMenu && editMode && (() => {
         const ctxTask = data?.tasks.find(t => t.id === contextMenu.taskId)
         return (
-          <div
-            className="fixed z-50 bg-white border border-surface-200 rounded-xl shadow-float py-1 min-w-[160px] animate-scale-in"
-            style={{ left: contextMenu.x, top: contextMenu.y }}
-            onClick={e => e.stopPropagation()}
+          <Popover
+            triggerRef={contextMenu.triggerRef}
+            open
+            onOpenChange={open => { if (!open) setContextMenu(null) }}
+            placement="bottom-start"
+            className="min-w-[160px] py-1"
           >
             <button onClick={() => ctxCycleStatus(contextMenu.taskId)}
               className="w-full flex items-center gap-2 px-3 py-2 text-sm text-ink-700 hover:bg-surface-50 transition-colors text-left">
@@ -1179,7 +1245,7 @@ export const GanttView = forwardRef<GanttHandle, Props>(function GanttView({ onT
               className="w-full flex items-center gap-2 px-3 py-2 text-sm text-brick-500 hover:bg-brick-50 transition-colors text-left">
               <Trash2 size={13} /> Delete
             </button>
-          </div>
+          </Popover>
         )
       })()}
 

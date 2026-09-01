@@ -1,4 +1,5 @@
 import { useState, useRef } from 'react'
+import { Popover } from '../ui/Popover'
 
 interface Props {
   value: string
@@ -17,6 +18,8 @@ interface Props {
  *
  * In drawer mode: pass onCommit + onCancel; blur/Enter auto-commits.
  * In bulk-bar mode: pass only onChange; caller drives commit via a separate button.
+ *
+ * Dropdown migrated to Popover primitive (B2 commit 2).
  */
 export function PortfolioCombobox({
   value, onChange, options,
@@ -45,9 +48,6 @@ export function PortfolioCombobox({
   }
 
   function handleBlur() {
-    // Blur fires AFTER mousedown on dropdown options (which call e.preventDefault()).
-    // So if blur fires naturally (not from option click), commit.
-    // Use a tiny timeout to let option mousedown settle first.
     setTimeout(() => {
       if (!inputRef.current || document.activeElement === inputRef.current) return
       setOpen(false)
@@ -59,14 +59,13 @@ export function PortfolioCombobox({
     onChange(opt)
     setOpen(false)
     onCommit?.()
-    // Re-focus input so the component remains controlled until blur
     setTimeout(() => inputRef.current?.blur(), 0)
   }
 
   return (
     <div className={`relative ${className}`}>
       <input
-        ref={inputRef}
+        ref={inputRef as React.RefObject<HTMLInputElement>}
         autoFocus={autoFocus}
         type="text"
         className="input text-xs !py-0.5 w-full"
@@ -77,22 +76,25 @@ export function PortfolioCombobox({
         onBlur={handleBlur}
         onKeyDown={handleKeyDown}
       />
-      {open && filtered.length > 0 && (
-        <div className="absolute top-full left-0 mt-1 w-full min-w-[160px] bg-white border border-surface-200 rounded-xl shadow-float z-50 py-1 max-h-48 overflow-y-auto">
-          {filtered.map(opt => (
-            <button
-              key={opt}
-              type="button"
-              className="w-full text-left px-3 py-1.5 text-xs text-ink-700 hover:bg-surface-50 transition-colors"
-              // onMouseDown prevents input blur before the click registers
-              onMouseDown={e => e.preventDefault()}
-              onClick={() => selectOption(opt)}
-            >
-              {opt}
-            </button>
-          ))}
-        </div>
-      )}
+      <Popover
+        triggerRef={inputRef as unknown as React.RefObject<HTMLElement>}
+        open={open && filtered.length > 0}
+        onOpenChange={setOpen}
+        placement="bottom-start"
+        className="w-full min-w-[160px] py-1"
+      >
+        {filtered.map(opt => (
+          <button
+            key={opt}
+            type="button"
+            className="w-full text-left px-3 py-1.5 text-xs text-ink-700 hover:bg-surface-50 transition-colors"
+            onMouseDown={e => e.preventDefault()}
+            onClick={() => selectOption(opt)}
+          >
+            {opt}
+          </button>
+        ))}
+      </Popover>
     </div>
   )
 }

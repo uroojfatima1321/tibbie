@@ -130,12 +130,14 @@ export function ModuleDrawer({ moduleId, onClose, onOpenFeature }: Props) {
               </h2>
             )}
             <div className="flex items-center gap-2 mt-1 flex-wrap">
-              {/* Item 1: StatusPicker */}
+              {/* B2b: StatusPicker via Popover */}
               <StatusPicker
                 status={module_.status}
                 kind="feature"
                 editMode={editMode}
-                onSelect={s => setPendingStatus(s as FeatureStatus)}
+                open={statusOpen}
+                onOpenChange={setStatusOpen}
+                onSelect={s => { setStatusOpen(false); setPendingStatus(s as FeatureStatus) }}
               />
               {reworkCount > 0 && (
                 <span className="font-mono text-[11px] bg-amber-50 text-amber-600 border border-amber-200 px-2 py-0.5 rounded-full">

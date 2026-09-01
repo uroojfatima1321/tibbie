@@ -118,11 +118,13 @@ export function ProjectDrawer({ projectId, onClose, onOpenModule, onOpenFeature 
               </h2>
             )}
             <div className="flex items-center gap-2 mt-1 flex-wrap">
-              {/* Item 1: StatusPicker replaces inline ladder that displaced body content */}
+              {/* Item 1 → B2b: StatusPicker now via Popover primitive */}
               <StatusPicker
                 status={project.status}
                 kind="project"
                 editMode={editMode}
+                open={statusOpen}
+                onOpenChange={setStatusOpen}
                 onSelect={s => { setStatusOpen(false); setPendingStatus(s as ProjectStatus) }}
               />
               {/* P-6: portfolio — click-to-edit in editMode */}

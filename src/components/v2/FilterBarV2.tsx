@@ -1,8 +1,9 @@
-import { useState, useEffect, useRef, useMemo } from 'react'
+import { useState, useRef, useMemo } from 'react'
 import { SlidersHorizontal, X, ChevronDown } from 'lucide-react'
 import { useApp } from '../../store/context'
 import { Avatar } from '../members/Avatar'
 import { type V2FilterState, EMPTY_FILTER, isFilterEmpty, filterToParams, paramsToFilter } from '../../lib/filterV2'
+import { Popover } from '../ui/Popover'
 
 interface Props {
   filter: V2FilterState
@@ -32,28 +33,13 @@ export function FilterBarV2({ filter, onChange }: Props) {
   const [portfolioOpen, setPortfolioOpen] = useState(false)
   const [ownerOpen, setOwnerOpen] = useState(false)
   const [quarterOpen, setQuarterOpen] = useState(false)
-  // BUG-1 (A): module dropdown needs proper open/close state — was always-visible when no moduleId set
   const [moduleDropdownOpen, setModuleDropdownOpen] = useState(false)
-  const moduleDropdownRef = useRef<HTMLDivElement>(null)
-
-  // BUG-1 close on outside-click and Esc
-  useEffect(() => {
-    if (!moduleDropdownOpen) return
-    function onPointerDown(e: PointerEvent) {
-      if (moduleDropdownRef.current && !moduleDropdownRef.current.contains(e.target as Node)) {
-        setModuleDropdownOpen(false)
-      }
-    }
-    function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape') setModuleDropdownOpen(false)
-    }
-    document.addEventListener('pointerdown', onPointerDown)
-    document.addEventListener('keydown', onKey)
-    return () => {
-      document.removeEventListener('pointerdown', onPointerDown)
-      document.removeEventListener('keydown', onKey)
-    }
-  }, [moduleDropdownOpen])
+  // B2 commit 2: Popover trigger refs for each dropdown (one per filter dimension)
+  const statusRef    = useRef<HTMLButtonElement>(null)
+  const portfolioRef = useRef<HTMLButtonElement>(null)
+  const ownerRef     = useRef<HTMLButtonElement>(null)
+  const quarterRef   = useRef<HTMLButtonElement>(null)
+  const moduleRef    = useRef<HTMLButtonElement>(null)
 
   const members = data?.members || []
   const portfolios = useMemo(() => [...new Set(projectsV2.map(p => p.portfolio))].sort(), [projectsV2])
@@ -91,120 +77,103 @@ export function FilterBarV2({ filter, onChange }: Props) {
     <div className="border-b border-surface-200 bg-white px-4 sm:px-6 py-2 flex items-center gap-2 flex-wrap shrink-0">
       <SlidersHorizontal size={13} className="text-ink-400 shrink-0" />
 
-      {/* Status */}
-      <div className="relative">
-        <button onClick={() => setStatusOpen(v => !v)}
+      {/* Status — B2 commit 2: Popover primitive */}
+      <div>
+        <button ref={statusRef} onClick={() => setStatusOpen(v => !v)}
           className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${filter.statuses.length ? 'bg-ink-900 text-white border-ink-900' : 'border-surface-200 text-ink-500 hover:border-surface-300'}`}>
           Status{filter.statuses.length ? ` (${filter.statuses.length})` : ''}
         </button>
-        {statusOpen && (
-          <div className="absolute top-full left-0 mt-1 w-56 bg-white border border-surface-200 rounded-xl shadow-float z-30 py-2 animate-fade-in max-h-64 overflow-y-auto">
-            {STATUS_GROUPS.map(g => (
-              <div key={g.label}>
-                <p className="px-3 py-1 text-[10px] uppercase tracking-wider font-semibold text-ink-400">{g.label}</p>
-                {g.statuses.map(s => (
-                  <label key={s} className="flex items-center gap-2 px-3 py-1.5 hover:bg-surface-50 cursor-pointer">
-                    <input type="checkbox" checked={filter.statuses.includes(s)} onChange={() => toggleStatus(s)}
-                      className="rounded border-surface-300 text-rust-500 focus:ring-rust-400" />
-                    <span className="text-sm text-ink-700">{STATUS_LABELS[s] ?? s}</span>
-                  </label>
-                ))}
-              </div>
-            ))}
-          </div>
-        )}
+        <Popover triggerRef={statusRef} open={statusOpen} onOpenChange={setStatusOpen} placement="bottom-start" className="w-56 py-2">
+          {STATUS_GROUPS.map(g => (
+            <div key={g.label}>
+              <p className="px-3 py-1 text-[10px] uppercase tracking-wider font-semibold text-ink-400">{g.label}</p>
+              {g.statuses.map(s => (
+                <label key={s} className="flex items-center gap-2 px-3 py-1.5 hover:bg-surface-50 cursor-pointer">
+                  <input type="checkbox" checked={filter.statuses.includes(s)} onChange={() => toggleStatus(s)}
+                    className="rounded border-surface-300 text-rust-500 focus:ring-rust-400" />
+                  <span className="text-sm text-ink-700">{STATUS_LABELS[s] ?? s}</span>
+                </label>
+              ))}
+            </div>
+          ))}
+        </Popover>
       </div>
 
-      {/* Portfolio */}
+      {/* Portfolio — B2 commit 2 */}
       {portfolios.length > 1 && (
-        <div className="relative">
-          <button onClick={() => setPortfolioOpen(v => !v)}
+        <div>
+          <button ref={portfolioRef} onClick={() => setPortfolioOpen(v => !v)}
             className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${filter.portfolios.length ? 'bg-ink-900 text-white border-ink-900' : 'border-surface-200 text-ink-500 hover:border-surface-300'}`}>
             Portfolio{filter.portfolios.length ? ` (${filter.portfolios.length})` : ''}
           </button>
-          {portfolioOpen && (
-            <div className="absolute top-full left-0 mt-1 w-56 bg-white border border-surface-200 rounded-xl shadow-float z-30 py-2 animate-fade-in max-h-64 overflow-y-auto">
-              {portfolios.map(p => (
-                <label key={p} className="flex items-center gap-2 px-3 py-1.5 hover:bg-surface-50 cursor-pointer">
-                  <input type="checkbox" checked={filter.portfolios.includes(p)}
-                    onChange={() => set('portfolios', filter.portfolios.includes(p) ? filter.portfolios.filter(x => x !== p) : [...filter.portfolios, p])}
-                    className="rounded border-surface-300 text-rust-500 focus:ring-rust-400" />
-                  <span className="text-sm text-ink-700 truncate">{p}</span>
-                </label>
-              ))}
-            </div>
-          )}
+          <Popover triggerRef={portfolioRef} open={portfolioOpen} onOpenChange={setPortfolioOpen} placement="bottom-start" className="w-56 py-2">
+            {portfolios.map(p => (
+              <label key={p} className="flex items-center gap-2 px-3 py-1.5 hover:bg-surface-50 cursor-pointer">
+                <input type="checkbox" checked={filter.portfolios.includes(p)}
+                  onChange={() => set('portfolios', filter.portfolios.includes(p) ? filter.portfolios.filter(x => x !== p) : [...filter.portfolios, p])}
+                  className="rounded border-surface-300 text-rust-500 focus:ring-rust-400" />
+                <span className="text-sm text-ink-700 truncate">{p}</span>
+              </label>
+            ))}
+          </Popover>
         </div>
       )}
 
-      {/* Owner */}
+      {/* Owner — B2 commit 2 */}
       {members.length > 0 && (
-        <div className="relative">
-          <button onClick={() => setOwnerOpen(v => !v)}
+        <div>
+          <button ref={ownerRef} onClick={() => setOwnerOpen(v => !v)}
             className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${filter.ownerIds.length ? 'bg-ink-900 text-white border-ink-900' : 'border-surface-200 text-ink-500 hover:border-surface-300'}`}>
             Owner{filter.ownerIds.length ? ` (${filter.ownerIds.length})` : ''}
           </button>
-          {ownerOpen && (
-            <div className="absolute top-full left-0 mt-1 w-48 bg-white border border-surface-200 rounded-xl shadow-float z-30 py-2 animate-fade-in">
-              {members.map(m => (
-                <label key={m.id} className="flex items-center gap-2 px-3 py-1.5 hover:bg-surface-50 cursor-pointer">
-                  <input type="checkbox" checked={filter.ownerIds.includes(m.id)} onChange={() => toggleOwner(m.id)}
-                    className="rounded border-surface-300 text-rust-500 focus:ring-rust-400" />
-                  <Avatar member={m} size="xs" />
-                  <span className="text-sm text-ink-700 truncate">{m.name}</span>
-                </label>
-              ))}
-            </div>
-          )}
+          <Popover triggerRef={ownerRef} open={ownerOpen} onOpenChange={setOwnerOpen} placement="bottom-start" className="w-48 py-2">
+            {members.map(m => (
+              <label key={m.id} className="flex items-center gap-2 px-3 py-1.5 hover:bg-surface-50 cursor-pointer">
+                <input type="checkbox" checked={filter.ownerIds.includes(m.id)} onChange={() => toggleOwner(m.id)}
+                  className="rounded border-surface-300 text-rust-500 focus:ring-rust-400" />
+                <Avatar member={m} size="xs" />
+                <span className="text-sm text-ink-700 truncate">{m.name}</span>
+              </label>
+            ))}
+          </Popover>
         </div>
       )}
-      {/* Quarter */}
+      {/* Quarter — B2 commit 2 */}
       {quarters.length > 0 && (
-        <div className="relative">
-          <button onClick={() => setQuarterOpen(v => !v)}
+        <div>
+          <button ref={quarterRef} onClick={() => setQuarterOpen(v => !v)}
             className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${filter.quarter ? 'bg-ink-900 text-white border-ink-900' : 'border-surface-200 text-ink-500 hover:border-surface-300'}`}>
             {filter.quarter ?? 'Quarter'}
           </button>
-          {quarterOpen && (
-            <div className="absolute top-full left-0 mt-1 w-36 bg-white border border-surface-200 rounded-xl shadow-float z-30 py-1 animate-fade-in">
-              <button onClick={() => { set('quarter', null); setQuarterOpen(false) }}
-                className="w-full text-left px-3 py-2 text-sm text-ink-400 hover:bg-surface-50">All quarters</button>
-              {quarters.map(q => (
-                <button key={q} onClick={() => { set('quarter', q); setQuarterOpen(false) }}
-                  className={`w-full text-left px-3 py-2 text-sm hover:bg-surface-50 font-mono ${filter.quarter === q ? 'text-rust-600 font-medium' : 'text-ink-700'}`}>{q}</button>
-              ))}
-            </div>
-          )}
+          <Popover triggerRef={quarterRef} open={quarterOpen} onOpenChange={setQuarterOpen} placement="bottom-start" className="w-36 py-1">
+            <button onClick={() => { set('quarter', null); setQuarterOpen(false) }}
+              className="w-full text-left px-3 py-2 text-sm text-ink-400 hover:bg-surface-50">All quarters</button>
+            {quarters.map(q => (
+              <button key={q} onClick={() => { set('quarter', q); setQuarterOpen(false) }}
+                className={`w-full text-left px-3 py-2 text-sm hover:bg-surface-50 font-mono ${filter.quarter === q ? 'text-rust-600 font-medium' : 'text-ink-700'}`}>{q}</button>
+            ))}
+          </Popover>
         </div>
       )}
 
-      {/* BUG-1 (A): Module dimension filter with proper open/close state */}
+      {/* Module — B2 commit 2: Popover primitive */}
       {modulesV2.length > 0 && (
-        <div className="relative" ref={moduleDropdownRef}>
-          <button
+        <div>
+          <button ref={moduleRef}
             className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${filter.moduleId ? 'bg-ink-900 text-white border-ink-900' : moduleDropdownOpen ? 'bg-surface-100 border-surface-300 text-ink-700' : 'border-surface-200 text-ink-500 hover:border-surface-300'}`}
-            onClick={() => {
-              if (filter.moduleId) { setModule(null) }
-              else setModuleDropdownOpen(v => !v)
-            }}
+            onClick={() => { if (filter.moduleId) setModule(null); else setModuleDropdownOpen(v => !v) }}
             title={filter.moduleId ? 'Clear module filter (click)' : 'Filter by module'}
           >
-            {filter.moduleId
-              ? `↳ ${modulesV2.find(m => m.id === filter.moduleId)?.name ?? 'Module'}`
-              : 'Module'
-            }
+            {filter.moduleId ? `↳ ${modulesV2.find(m => m.id === filter.moduleId)?.name ?? 'Module'}` : 'Module'}
           </button>
-          {/* Dropdown: only shown when explicitly opened, never auto-renders */}
-          {moduleDropdownOpen && !filter.moduleId && (
-            <div className="absolute top-full left-0 mt-1 w-52 bg-white border border-surface-200 rounded-xl shadow-float z-30 py-1 animate-fade-in">
-              {modulesV2.map(m => (
-                <button key={m.id} onClick={() => { setModule(m.id); setModuleDropdownOpen(false) }}
-                  className="w-full text-left px-3 py-2 text-sm hover:bg-surface-50 text-ink-700">
-                  ↳ {m.name}
-                </button>
-              ))}
-            </div>
-          )}
+          <Popover triggerRef={moduleRef} open={moduleDropdownOpen && !filter.moduleId} onOpenChange={setModuleDropdownOpen} placement="bottom-start" className="w-52 py-1">
+            {modulesV2.map(m => (
+              <button key={m.id} onClick={() => { setModule(m.id); setModuleDropdownOpen(false) }}
+                className="w-full text-left px-3 py-2 text-sm hover:bg-surface-50 text-ink-700">
+                ↳ {m.name}
+              </button>
+            ))}
+          </Popover>
         </div>
       )}
 

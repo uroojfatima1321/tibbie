@@ -36,9 +36,12 @@ export function RoadmapView({ onOpenProject, onOpenModule, onOpenFeature, onNewP
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [kebab, setKebab] = useState<KebabTarget | null>(null)
 
-  function openKebab(e: React.MouseEvent, id: string, kind: 'project' | 'feature', currentStatus: string) {
+  function openKebab(e: React.MouseEvent, id: string, kind: 'project' | 'feature' | 'module', currentStatus: string) {
     e.stopPropagation()
-    setKebab({ id, kind, x: e.clientX, y: e.clientY, currentStatus })
+    const trigger = e.currentTarget as HTMLButtonElement
+    // Create a ref-like object from the live element — Popover reads getBoundingClientRect at open time
+    const triggerRef = { current: trigger } as React.RefObject<HTMLButtonElement>
+    setKebab({ id, kind, triggerRef, currentStatus })
   }
   function toggleSelect(id: string) {
     setSelectedIds(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
@@ -219,7 +222,7 @@ export function RoadmapView({ onOpenProject, onOpenModule, onOpenFeature, onNewP
                               childFeatures={mFeatures} members={members}
                               parentProject={modParent}
                               onOpen={() => onOpenModule(mod.id)}
-                              onKebab={e => { e.stopPropagation(); /* TODO: module kebab */ }} />
+                              onKebab={e => openKebab(e, mod.id, 'module', mod.status)} />
                           )
                         })}
                       </div>
@@ -263,7 +266,11 @@ export function RoadmapView({ onOpenProject, onOpenModule, onOpenFeature, onNewP
       </div>
 
       <RoadmapKebabMenu target={kebab} onClose={() => setKebab(null)}
-        onOpenItem={(id, kind) => { if (kind === 'project') onOpenProject(id); else onOpenFeature(id) }} />
+        onOpenItem={(id, kind) => {
+          if (kind === 'project') onOpenProject(id)
+          else if (kind === 'module') onOpenModule(id)
+          else onOpenFeature(id)
+        }} />
       {editMode && (
         <RoadmapBulkBar selectedIds={selectedIds} allProjects={projectsV2} allFeatures={featuresV2}
           portfolios={[...new Set(projectsV2.map(p => p.portfolio))]}

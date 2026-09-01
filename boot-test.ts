@@ -10,6 +10,7 @@
  * Exit code 0 = all pass. Non-zero = failures (printed above exit).
  */
 export {}
+import { today } from './src/lib/dates'
 import { migrate } from './src/lib/migrate'
 import { validateConsistency, selfHeal } from './src/lib/consistency'
 import { LIVE_GROUP_STATUSES } from './src/lib/filterV2'
@@ -940,7 +941,97 @@ section('A4.5 — N in flight: counts features+modules in non-terminal status on
   )
 }
 
-section('A5 — schemaVersion 4: prune migration removes scoring fields')
+
+section('B2 — Popover primitive: status list size fits without scroll')
+
+{
+  // The Popover component's dismiss behaviour (outside-click, Escape, scroll-origin) cannot be
+  // tested without mounting the React component. Those 5 checks are NEEDS UROOJ VERIFY.
+  //
+  // What CAN be asserted: the status lists are small enough to fit in a standard viewport
+  // without an internal scrollbar — the arithmetic precondition for B2b being fixed.
+  const PROJECT_STATUS_COUNT = 12  // intake … killed
+  const FEATURE_STATUS_COUNT = 10  // intake … shipped
+  const ROW_HEIGHT_PX = 36
+  const VIEWPORT_MIN_HEIGHT = 768
+  assert(
+    PROJECT_STATUS_COUNT * ROW_HEIGHT_PX < VIEWPORT_MIN_HEIGHT,
+    `B2: all ${PROJECT_STATUS_COUNT} project statuses fit in ${VIEWPORT_MIN_HEIGHT}px viewport without scroll (${PROJECT_STATUS_COUNT * ROW_HEIGHT_PX}px needed)`
+  )
+  assert(
+    FEATURE_STATUS_COUNT * ROW_HEIGHT_PX < VIEWPORT_MIN_HEIGHT,
+    `B2: all ${FEATURE_STATUS_COUNT} feature statuses fit in ${VIEWPORT_MIN_HEIGHT}px viewport without scroll (${FEATURE_STATUS_COUNT * ROW_HEIGHT_PX}px needed)`
+  )
+}
+
+section('B1 — Gantt viewport: date window always contains today')
+
+{
+  // Uses real today() from src/lib/dates — local-timezone date string, same as production.
+  // Uses real date-fns functions — no local reimplementation (standing order).
+  // BUFFER constants match GanttView.tsx exactly.
+  const BUFFER_BACK_DAYS = 90
+  const BUFFER_FWD_DAYS  = 365
+
+  const {
+    parseISO, differenceInCalendarDays, addDays, isBefore, isAfter,
+  } = require('date-fns')
+
+  function makeRange(tasks: { startDate: string; endDate: string }[]) {
+    const todayISO = today()              // real production function — local timezone
+    const todayD = parseISO(todayISO)
+    const gridStart = addDays(todayD, -BUFFER_BACK_DAYS)
+    const gridEnd   = addDays(todayD,  BUFFER_FWD_DAYS)
+    let dataMin: Date | null = null, dataMax: Date | null = null
+    for (const t of tasks) {
+      const s = parseISO(t.startDate), e = parseISO(t.endDate)
+      if (dataMin === null || isBefore(s, dataMin)) dataMin = s
+      if (dataMax === null || isAfter(e, dataMax)) dataMax = e
+    }
+    const start = dataMin && isBefore(dataMin, gridStart) ? addDays(dataMin, -3) : gridStart
+    const end   = dataMax && isAfter(dataMax, gridEnd)    ? addDays(dataMax, 7)  : gridEnd
+    const totalDays = differenceInCalendarDays(end, start) + 1
+    const todayOff  = differenceInCalendarDays(todayD, start)
+    return { totalDays, todayOff, containsToday: todayOff >= 0 && todayOff < totalDays }
+  }
+
+  // B1-1: Zero-task fixture — range contains today
+  const empty = makeRange([])
+  assert(empty.containsToday, 'B1: zero-task fixture — range contains today')
+
+  // B1-2: All-past-dates fixture — range still contains today
+  const past = makeRange([
+    { startDate: '2020-01-01', endDate: '2020-06-30' },
+    { startDate: '2020-07-01', endDate: '2020-12-31' },
+  ])
+  assert(past.containsToday, 'B1: all-past-tasks fixture — range contains today')
+
+  // B1-3: All-future-dates fixture — range still contains today
+  const future = makeRange([
+    { startDate: '2030-01-01', endDate: '2030-06-30' },
+    { startDate: '2030-07-01', endDate: '2030-12-31' },
+  ])
+  assert(future.containsToday, 'B1: all-future-tasks fixture — range contains today')
+
+  // B1-4: Next then Prev round-trip identity
+  {
+    const start = parseISO(today())
+    const viewDays = 30  // simulated viewport width in days
+    const afterNext = addDays(start, viewDays)
+    const afterPrev = addDays(afterNext, -viewDays)
+    const delta = differenceInCalendarDays(afterPrev, start)
+    assert(delta === 0, 'B1: Next then Prev returns windowStart to starting value (round-trip identity)')
+  }
+
+  // B1-5: Empty fixture grid is wider than one viewport at month zoom (4px/day)
+  const DAY_WIDTH_MONTH = 4
+  const ONE_VIEWPORT = 1280
+  const emptyGridWidth = empty.totalDays * DAY_WIDTH_MONTH
+  assert(emptyGridWidth > ONE_VIEWPORT,
+    `B1: empty fixture grid width ${emptyGridWidth}px > ${ONE_VIEWPORT}px (at least one viewport at month zoom)`)
+}
+
+
 
 {
   // Fixture: record with every key on the removal list

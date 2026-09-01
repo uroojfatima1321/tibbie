@@ -65,7 +65,6 @@ export const Workspace = forwardRef<WorkspaceHandle, Props>(function Workspace(
   const TABS: { id: WorkspaceView; label: string; icon: React.ReactNode }[] = [
     { id: 'gantt',    label: 'Timeline', icon: <BarChart2 size={13} /> },
     { id: 'roadmap',  label: 'Roadmap',  icon: <Map size={13} /> },
-    { id: 'gantt',  label: 'Workload', icon: <Layers size={13} /> },
     { id: 'projects', label: 'Projects', icon: <FolderOpen size={13} /> },
   ]
 
@@ -217,18 +216,6 @@ function ProjectsListView({ projects, tasks, onSelectProject, onNewProject, onSw
   return (
     <div className="flex-1 overflow-y-auto tibbie-scroll p-4 sm:p-6">
       {/* B5: Projects-moved banner */}
-      {onSwitchToRoadmap && (
-        <div className="mb-4 flex items-center gap-3 px-4 py-3 bg-amber-50 border border-amber-200 rounded-xl text-sm text-amber-700">
-          <span>Projects have moved to</span>
-          <button
-            onClick={onSwitchToRoadmap}
-            className="font-semibold underline hover:text-amber-900 transition-colors"
-          >
-            Roadmap →
-          </button>
-          <span className="text-amber-500 text-xs ml-auto">This tab stays for one more release.</span>
-        </div>
-      )}
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 max-w-6xl">
         {activeProjects.map(project => {
           const pts = tasks.filter(t => t.projectId === project.id)

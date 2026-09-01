@@ -181,7 +181,7 @@ export function RightSidebar({ onOpenPhaseLibrary }: SidebarProps) {
   const { activeProjectId } = useApp()
 
   return (
-    <div className={`hidden lg:flex w-56 xl:w-64 shrink-0 border-l border-surface-200 bg-white flex-col overflow-hidden transition-all ${activeProjectId ? '' : 'opacity-60'}`}>
+    <div className={`hidden lg:flex shrink-0 border-l border-surface-200 bg-white flex-col overflow-hidden transition-all duration-200 ${activeProjectId ? 'w-56 xl:w-64' : 'w-0 border-l-0'}`}>
       <div className="flex-1 overflow-y-auto tibbie-scroll">
         <SidebarBody onOpenPhaseLibrary={onOpenPhaseLibrary} />
       </div>

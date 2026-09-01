@@ -94,12 +94,14 @@ export function FeatureDrawer({ featureId, onClose, scrollToRice }: Props) {
               </h2>
             )}
             <div className="flex items-center gap-2 mt-1 flex-wrap">
-              {/* Item 1: StatusPicker */}
+              {/* B2b: StatusPicker via Popover */}
               <StatusPicker
                 status={feature.status}
                 kind="feature"
                 editMode={editMode}
-                onSelect={s => setPendingStatus(s as FeatureStatus)}
+                open={statusOpen}
+                onOpenChange={setStatusOpen}
+                onSelect={s => { setStatusOpen(false); setPendingStatus(s as FeatureStatus) }}
               />
               {parentProject && (
             <span className="text-xs text-ink-400">
